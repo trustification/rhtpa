@@ -30,6 +30,8 @@ spec:
     value: .github/scripts/Containerfile
   - name: path-context
     value: .
+  - name: build-args
+    value: ["tag=0.1.0-alpha.14"]
   pipelineSpec:
     finally:
     - name: show-sbom
