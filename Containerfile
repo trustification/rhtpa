@@ -27,5 +27,14 @@ LABEL name ="Trustify"
 LABEL org.opencontainers.image.source="https://github.com/trustification/rhtpa"
 LABEL summary ="Trustify"
 
-COPY --from=0 /usr/src/project/target/release/trustd /
+RUN microdnf reinstall tzdata -y
+ENV TZ=UTC
+RUN mkdir trustify
 
+COPY --from=0 /usr/src/project/target/release/trustd trustify
+
+RUN useradd -ms /bin/bash trustify
+
+RUN chown trustify -R trustify
+
+USER trustify
