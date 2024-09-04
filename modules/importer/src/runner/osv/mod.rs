@@ -1,15 +1,15 @@
-mod walker;
+mod handler;
 
 use crate::{
     model::OsvImporter,
     runner::{
-        common::walker::{CallbackError, Callbacks},
+        common::walker::{CallbackError, Callbacks, GitWalker},
         context::RunContext,
-        osv::walker::OsvWalker,
         report::{Phase, ReportBuilder, ScannerError},
         RunOutput,
     },
 };
+use handler::OsvHandler;
 use parking_lot::Mutex;
 use std::{path::Path, path::PathBuf, sync::Arc};
 use tokio::runtime::Handle;
@@ -92,18 +92,20 @@ impl super::ImportRunner {
 
         // run the walker
 
-        let walker = OsvWalker::new(osv.source.clone())
-            .continuation(continuation)
-            .branch(osv.branch)
-            .path(osv.path)
-            .callbacks(Context {
+        let walker = GitWalker::new(
+            osv.source.clone(),
+            OsvHandler(Context {
                 context,
                 source: osv.source,
                 labels: osv.common.labels,
                 report: report.clone(),
                 ingestor,
-            })
-            .progress(progress);
+            }),
+        )
+        .continuation(continuation)
+        .branch(osv.branch)
+        .path(osv.path)
+        .progress(progress);
 
         let continuation = match working_dir {
             Some(working_dir) => walker.working_dir(working_dir).run().await,

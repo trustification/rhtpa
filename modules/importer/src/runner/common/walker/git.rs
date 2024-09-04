@@ -66,12 +66,18 @@ where
     pub handler: H,
 
     pub progress: P,
+
+    /// Fetch depth, <=0 means get everything
+    pub depth: i32,
 }
 
 impl<H> GitWalker<H, (), ()>
 where
     H: Handler,
 {
+    /// Create a new GitWalker for a given repo and handler. By
+    /// default, a "shallow clone" (depth=1) of the repo will be
+    /// walked.
     pub fn new(source: impl Into<String>, handler: H) -> Self {
         Self {
             source: source.into(),
@@ -81,6 +87,7 @@ where
             working_dir: (),
             handler,
             progress: (),
+            depth: 1, // shallow clone, by default
         }
     }
 }
@@ -100,6 +107,7 @@ where
             working_dir: self.working_dir,
             handler,
             progress: self.progress,
+            depth: self.depth,
         }
     }
 
@@ -112,6 +120,7 @@ where
             working_dir: self.working_dir,
             handler: self.handler,
             progress,
+            depth: self.depth,
         }
     }
 
@@ -135,6 +144,7 @@ where
             working_dir,
             handler: self.handler,
             progress: self.progress,
+            depth: self.depth,
         }
     }
 
@@ -145,6 +155,11 @@ where
 
     pub fn path(mut self, path: Option<impl Into<String>>) -> Self {
         self.path = path.map(|s| s.into());
+        self
+    }
+
+    pub fn depth(mut self, depth: i32) -> Self {
+        self.depth = depth;
         self
     }
 
@@ -185,11 +200,7 @@ where
 
             let mut fo = Self::create_fetch_options();
             if self.continuation.0.is_none() {
-                if cfg!(test) {
-                    fo.depth(3);
-                } else {
-                    fo.depth(1);
-                }
+                fo.depth(self.depth);
             }
             builder.fetch_options(fo).clone(&self.source, path)
         });
@@ -414,14 +425,12 @@ fn is_hidden(entry: &DirEntry) -> bool {
 
 use crate::runner::common::Error;
 use crate::runner::progress::{Progress, ProgressInstance};
-#[cfg(test)]
-pub(crate) use test::git_reset;
 
 #[cfg(test)]
 mod test {
-    use super::Continuation;
+    use super::{Continuation, GitWalker};
     use git2::{Repository, ResetType};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     /// reset a git repository to the spec and return the commit as continuation
     pub(crate) fn git_reset(path: &Path, spec: &str) -> anyhow::Result<Continuation> {
@@ -433,5 +442,60 @@ mod test {
         let commit = r#ref.peel_to_commit()?.id().to_string();
 
         Ok(Continuation(Some(commit)))
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_walker() -> Result<(), anyhow::Error> {
+        const SOURCE: &str = "https://github.com/RConsortium/r-advisory-database";
+        let path = PathBuf::from(format!(
+            "{}target/test.data/test_walker.git",
+            env!("CARGO_WORKSPACE_ROOT")
+        ));
+        if path.exists() {
+            std::fs::remove_dir_all(path.clone())?;
+        }
+
+        let cont = Continuation::default();
+
+        let walker = GitWalker::new(SOURCE, ())
+            .path(Some("vulns"))
+            .continuation(cont)
+            .working_dir(path.clone())
+            .depth(3);
+
+        let _cont = walker.run().await.expect("should not fail");
+
+        let cont = git_reset(&path, "HEAD~2").expect("must not fail");
+
+        let walker = GitWalker::new(SOURCE, ())
+            .path(Some("vulns"))
+            .continuation(cont)
+            .working_dir(path);
+
+        walker.run().await.expect("should not fail");
+
+        Ok(())
+    }
+
+    /// ensure that using `path`, we can't escape the repo directory
+    #[test_log::test(tokio::test)]
+    async fn test_walker_fail_escape() {
+        const SOURCE: &str = "https://github.com/RConsortium/r-advisory-database";
+        let path = PathBuf::from(format!(
+            "{}target/test.data/test_walker_fail_escape.git",
+            env!("CARGO_WORKSPACE_ROOT")
+        ));
+
+        let cont = Continuation::default();
+
+        let walker = GitWalker::new(SOURCE, ())
+            .path(Some("/etc"))
+            .continuation(cont)
+            .working_dir(path.clone());
+
+        let r = walker.run().await;
+
+        // must fail as we try to escape the repository root
+        assert!(r.is_err());
     }
 }
