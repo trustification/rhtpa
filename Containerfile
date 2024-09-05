@@ -37,4 +37,8 @@ RUN useradd -ms /bin/bash trustify
 
 RUN chown trustify -R trustify
 
+RUN mkdir /licenses
+
+COPY ./LICENSE /licenses/AL
+
 USER trustify
