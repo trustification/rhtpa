@@ -19,6 +19,7 @@ use std::{fmt::Debug, time::Instant};
 use tracing::instrument;
 use trustify_common::{error::ErrorInformation, id::IdError};
 use trustify_entity::labels::Labels;
+use trustify_module_analysis::service::AnalysisService;
 use trustify_module_storage::service::{dispatch::DispatchBackend, StorageBackend};
 
 #[derive(Debug, thiserror::Error)]
@@ -175,6 +176,27 @@ impl IngestorService {
         let result = fmt
             .load(&self.graph, labels.into(), issuer, &result.digests, stream)
             .await?;
+
+        match fmt {
+            Format::SPDX | Format::CycloneDX => {
+                let analysis_service = AnalysisService::new(self.graph.db.clone());
+                match analysis_service
+                    .load_graphs(vec![result.id.value()], ())
+                    .await
+                {
+                    Ok(_) => log::debug!(
+                        "Analysis graph for sbom: {} loaded successfully.",
+                        result.id.value()
+                    ),
+                    Err(e) => log::warn!(
+                        "Error loading sbom {} into analysis graph : {}",
+                        result.id.value(),
+                        e
+                    ),
+                }
+            }
+            _ => {}
+        };
 
         let duration = Instant::now() - start;
         log::debug!(
