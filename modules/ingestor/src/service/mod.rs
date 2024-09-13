@@ -1,13 +1,12 @@
 pub mod advisory;
+pub mod dataset;
 pub mod sbom;
-
 pub mod weakness;
 
 mod format;
 pub use format::Format;
-use tokio::task::JoinError;
-use tokio_util::io::ReaderStream;
 
+use crate::service::dataset::{DatasetIngestResult, DatasetLoader};
 use crate::{graph::Graph, model::IngestResult};
 use actix_web::{body::BoxBody, HttpResponse, ResponseError};
 use anyhow::anyhow;
@@ -16,6 +15,8 @@ use sbom_walker::report::ReportSink;
 use sea_orm::error::DbErr;
 use std::sync::Arc;
 use std::{fmt::Debug, time::Instant};
+use tokio::task::JoinError;
+use tokio_util::io::ReaderStream;
 use tracing::instrument;
 use trustify_common::{error::ErrorInformation, id::IdError};
 use trustify_entity::labels::Labels;
@@ -48,6 +49,8 @@ pub enum Error {
     UnsupportedFormat(String),
     #[error("failed to await the task: {0}")]
     Join(#[from] JoinError),
+    #[error(transparent)]
+    Zip(#[from] zip::result::ZipError),
 }
 
 impl ResponseError for Error {
@@ -113,6 +116,11 @@ impl ResponseError for Error {
                 message: inner.to_string(),
                 details: None,
             }),
+            Self::Zip(inner) => HttpResponse::BadRequest().json(ErrorInformation {
+                error: "ZipError".into(),
+                message: inner.to_string(),
+                details: None,
+            }),
         }
     }
 }
@@ -166,33 +174,28 @@ impl IngestorService {
             .await
             .map_err(|err| Error::Storage(anyhow!("{err}")))?;
 
-        let stream = self
-            .storage
-            .retrieve(result.key())
-            .await
-            .map_err(Error::Storage)?
-            .ok_or_else(|| Error::Storage(anyhow!("file went missing during upload")))?;
-
         let result = fmt
-            .load(&self.graph, labels.into(), issuer, &result.digests, stream)
+            .load(&self.graph, labels.into(), issuer, &result.digests, bytes)
             .await?;
 
         match fmt {
             Format::SPDX | Format::CycloneDX => {
                 let analysis_service = AnalysisService::new(self.graph.db.clone());
-                match analysis_service
-                    .load_graphs(vec![result.id.value()], ())
-                    .await
-                {
-                    Ok(_) => log::debug!(
+                if result.id.to_string().starts_with("urn:uuid:") {
+                    match analysis_service // TODO: today we chop off 'urn:uuid:' prefix using .split_off on result.id
+                        .load_graphs(vec![result.id.to_string().split_off("urn:uuid:".len())], ())
+                        .await
+                    {
+                        Ok(_) => log::debug!(
                         "Analysis graph for sbom: {} loaded successfully.",
                         result.id.value()
                     ),
-                    Err(e) => log::warn!(
+                        Err(e) => log::warn!(
                         "Error loading sbom {} into analysis graph : {}",
                         result.id.value(),
                         e
                     ),
+                    }
                 }
             }
             _ => {}
@@ -208,6 +211,17 @@ impl IngestorService {
 
         Ok(result)
     }
+
+    /// Ingest a dataset archive
+    #[instrument(skip(self, bytes), ret, err)]
+    pub async fn ingest_dataset(
+        &self,
+        bytes: &[u8],
+        labels: impl Into<Labels> + Debug,
+    ) -> Result<DatasetIngestResult, Error> {
+        let loader = DatasetLoader::new(self.graph());
+        loader.load(labels.into(), bytes).await
+    }
 }
 
 /// Capture warnings from the import process
@@ -218,11 +232,15 @@ impl Warnings {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn add(&self, msg: String) {
+        self.0.lock().push(msg);
+    }
 }
 
 impl ReportSink for Warnings {
     fn error(&self, msg: String) {
-        self.0.lock().push(msg);
+        self.add(msg)
     }
 }
 
