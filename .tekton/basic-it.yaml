@@ -58,3 +58,4 @@ spec:
   workspaces:
     - name: cluster-credentials
       optional: true
+
