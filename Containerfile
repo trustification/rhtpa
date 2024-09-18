@@ -42,3 +42,8 @@ RUN mkdir /licenses
 COPY ./LICENSE /licenses/AL
 
 USER trustify
+
+WORKDIR trustify
+
+ENTRYPOINT ["./trustd"]
+
