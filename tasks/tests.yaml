@@ -16,3 +16,5 @@ spec:
         value: $(params.SNAPSHOT)
     script: |
       echo "aaaaaaaaaaaa"
+      ls
+      curl -v localhost:8080
