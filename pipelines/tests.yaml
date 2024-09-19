@@ -1,17 +1,28 @@
 apiVersion: tekton.dev/v1
-kind: Task
+kind: Pipeline
 metadata:
   name: tests
+  namespace: trusted-content-tenant
 spec:
   description: >-
-    Sample description
+    Empty tests
   params:
-  - name: SNAPSHOT
-    description: Snapshot context data of the current build
-  steps:
-  - name: echo
-    env:
-      - name: SNAPSHOT
-        value: $(params.SNAPSHOT)
-    script: |
-      echo "aaaaaaaaaaaa"
+    - name: SNAPSHOT
+      description: Basic description
+      type: string
+  tasks:
+    - name: echo-task
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/trustification/rhtpa
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/tests.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: COMPONENT
+          value: default
