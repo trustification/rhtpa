@@ -10,6 +10,7 @@ spec:
     description: Snapshot context data of the current build
   steps:
   - name: echo
+    image: quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:20582f271de1d0fee3b9a41179ee479f667eb619
     env:
       - name: SNAPSHOT
         value: $(params.SNAPSHOT)
