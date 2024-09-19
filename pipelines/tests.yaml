@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: tests
+spec:
+  description: >-
+    Sample description
+  params:
+  - name: SNAPSHOT
+    description: Snapshot context data of the current build
+  steps:
+  - name: echo
+    env:
+      - name: SNAPSHOT
+        value: $(params.SNAPSHOT)
+    script: |
+      echo "aaaaaaaaaaaa"
