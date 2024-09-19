@@ -15,6 +15,5 @@ spec:
       - name: SNAPSHOT
         value: $(params.SNAPSHOT)
     script: |
-      echo "aaaaaaaaaaaa"
-      ls
+      ./trustd
       curl -v localhost:8080
