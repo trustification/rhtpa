@@ -32,6 +32,7 @@ ENV TZ=UTC
 RUN mkdir trustify
 
 COPY --from=0 /usr/src/project/target/release/trustd trustify
+COPY --from=0 /usr/src/project/run-integration-test.sh trustify
 
 RUN useradd -ms /bin/bash trustify
 
@@ -44,6 +45,3 @@ COPY ./LICENSE /licenses/AL
 USER trustify
 
 WORKDIR trustify
-
-ENTRYPOINT ["./trustd"]
-
