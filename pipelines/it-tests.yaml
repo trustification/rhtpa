@@ -1,0 +1,28 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tests
+  namespace: trusted-content-tenant
+spec:
+  params:
+    - name: SNAPSHOT
+      type: string
+  tasks:
+    - name: test
+      params:
+        - name: SNAPSHOT
+          value: "$(params.SNAPSHOT)"
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+            type: string
+        steps:
+          - name: test-output
+            env:
+              - name: SNAPSHOT
+                value: "$(params.SNAPSHOT)"
+              - name: NAMESPACE
+                value: "$(context.pipelineRun.namespace)"
+            script: |
+              ./tests.sh
+
