@@ -7,15 +7,15 @@ spec:
     Sample description
   params:
   - name: SNAPSHOT
-    description: Snapshot context data of the current build
+    type: string
   results:
   - name: TEST_OUTPUT
     description: Test output
   steps:
-  - name: echo
-    image: quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:20582f271de1d0fee3b9a41179ee479f667eb619
+  - name: basic-test
+    image: quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:latest
     env:
       - name: SNAPSHOT
         value: $(params.SNAPSHOT)
     script: |
-      ./run-integration-test.sh
+      ./test.sh
