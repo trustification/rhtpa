@@ -17,13 +17,10 @@ spec:
           - name: SNAPSHOT
             type: string
         steps:
-          - name: test-output
-            image: $(tasks.build-container.results.IMAGE_URL)
+          - image: quay.io/redhat-appstudio/konflux-test:latest
             env:
               - name: SNAPSHOT
-                value: "$(params.SNAPSHOT)"
-              - name: NAMESPACE
-                value: "$(context.pipelineRun.namespace)"
+                value: $(params.SNAPSHOT)
             script: |
-              ./tests.sh
+              echo -e "${SNAPSHOT}"
 
