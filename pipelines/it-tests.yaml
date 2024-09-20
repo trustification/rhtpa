@@ -18,6 +18,7 @@ spec:
             type: string
         steps:
           - name: test-output
+            image: $(tasks.build-container.results.IMAGE_URL)
             env:
               - name: SNAPSHOT
                 value: "$(params.SNAPSHOT)"
