@@ -23,4 +23,5 @@ spec:
                 value: $(params.SNAPSHOT)
             script: |
               echo -e "${SNAPSHOT}"
+              ls
 
