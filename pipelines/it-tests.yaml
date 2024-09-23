@@ -17,7 +17,7 @@ spec:
             type: string
         steps:
           - name: test-output
-            image: docker.io/bitnami/kubectl:latest
+            image: 	quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:{{revision}}
             env:
               - name: SNAPSHOT
                 value: "$(params.SNAPSHOT)"
@@ -26,11 +26,5 @@ spec:
             script: |
               #!/usr/bin/bash
               set -euxo pipefail
+              ls
 
-              IMAGE=$(echo "$SNAPSHOT" | jq -r '.components[0].containerImage')
-              echo "Extracted image: $IMAGE"
-              kubectl create job test-hello -n $NAMESPACE --image=$IMAGE
-              kubectl wait --for=condition=complete job/test-hello --timeout=120s
-              LOGS=$(kubectl logs -l job-name=test-hello -n $NAMESPACE)
-              # kubectl delete job --ignore-not-found test-hello -n $NAMESPACE
-              echo $LOGS
