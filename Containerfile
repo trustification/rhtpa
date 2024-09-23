@@ -21,10 +21,11 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL com.redhat.component ="Trustify"
 LABEL description ="Trustify"
 LABEL io.k8s.description ="Trustify"
-LABEL io.k8s.display-name ="Trustif"
+LABEL io.k8s.display-name ="Trustify"
 LABEL io.openshift.tags ="Trustify"
 LABEL name ="Trustify"
 LABEL org.opencontainers.image.source="https://github.com/trustification/rhtpa"
+LABEL konflux.additional-tags="test"
 LABEL summary ="Trustify"
 
 RUN microdnf reinstall tzdata -y

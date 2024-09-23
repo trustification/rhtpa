@@ -17,7 +17,7 @@ spec:
             type: string
         steps:
           - name: test-output
-            image: 	quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:{{revision}}
+            image: 	quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:$(source.git.revision)
             env:
               - name: SNAPSHOT
                 value: "$(params.SNAPSHOT)"
