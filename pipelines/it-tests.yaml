@@ -2,7 +2,6 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: tests
-  namespace: trusted-content-tenant
 spec:
   params:
     - name: SNAPSHOT
@@ -17,11 +16,23 @@ spec:
           - name: SNAPSHOT
             type: string
         steps:
-          - image: quay.io/redhat-appstudio/konflux-test:latest
+          - name: test-output
+            image: docker.io/bitnami/kubectl:latest
             env:
               - name: SNAPSHOT
-                value: $(params.SNAPSHOT)
+                value: "$(params.SNAPSHOT)"
+              - name: NAMESPACE
+                value: "$(context.pipelineRun.namespace)"
             script: |
-              echo -e "${SNAPSHOT}"
-              ls
+              #!/usr/bin/bash
+              set -euxo pipefail
 
+              IMAGE=$(echo "$SNAPSHOT" | jq -r '.components[0].containerImage')
+              echo "Extracted image: $IMAGE"
+              kubectl delete job --ignore-not-found test-hello -n $NAMESPACE
+              kubectl delete pods --ignore-not-found -l job-name=test-hello -n $NAMESPACE
+              kubectl create job test-hello -n $NAMESPACE --image=$IMAGE
+              kubectl wait --for=condition=complete job/test-hello --timeout=120s
+              LOGS=$(kubectl logs -l job-name=test-hello -n $NAMESPACE)
+              kubectl delete job --ignore-not-found test-hello -n $NAMESPACE
+              echo $LOGS

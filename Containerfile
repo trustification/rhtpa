@@ -32,7 +32,7 @@ ENV TZ=UTC
 RUN mkdir trustify
 
 COPY --from=0 /usr/src/project/target/release/trustd trustify
-COPY --from=0 /usr/src/project/test.sh trustify
+COPY --from=0 /usr/src/project/entrypoint.sh trustify
 
 RUN useradd -ms /bin/bash trustify
 
@@ -45,3 +45,5 @@ COPY ./LICENSE /licenses/AL
 USER trustify
 
 WORKDIR trustify
+
+ENTRYPOINT ["/entrypoint.sh"]
