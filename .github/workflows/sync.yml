@@ -9,8 +9,9 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-    - uses: tgymnich/fork-sync@v1.2.1
+    - uses: tgymnich/fork-sync@v2.0.10
       with:
         base: main
         head: main 
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        merge_method: rebase
