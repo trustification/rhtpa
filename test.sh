@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./tempo &
+./trustd &
 
 APP_PID=$!
 
