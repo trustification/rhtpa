@@ -2,16 +2,37 @@ name: sync-upstream
 
 on:
   schedule:
-    - cron: '*/30 * * * *' # every 30 minutes
-  workflow_dispatch: # on button click
+    - cron:  '0 * * * *'
+    # once every hour
+
+  workflow_dispatch:
+    inputs:
+      sync_test_mode:
+        description: 'Fork Sync Test Mode'
+        type: boolean
+        default: false
 
 jobs:
-  sync:
+  sync_latest_from_upstream:
     runs-on: ubuntu-latest
+    name: Sync latest commits from upstream repo
+
     steps:
-    - uses: tgymnich/fork-sync@v2.0.10
+    - name: Checkout target repo
+      uses: actions/checkout@v3
       with:
-        base: main
-        head: main 
-        token: ${{ secrets.GITHUB_TOKEN }}
-        merge_method: rebase
+        ref: main
+        persist-credentials: false
+    - name: Sync upstream changes
+      id: sync
+      uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+      with:
+        target_sync_branch: main
+        target_repo_token: ${{ secrets.UPSTREAM_SYNC }}
+        upstream_sync_branch: main
+        upstream_sync_repo: trustification/trustify
+        test_mode: ${{ inputs.sync_test_mode }}
+      
+    - name: New commits found
+      if: steps.sync.outputs.has_new_commits == 'true'
+      run: echo "New commits were found to sync."
