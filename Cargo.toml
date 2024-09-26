@@ -18,6 +18,7 @@ members = [
     "trustd",
     "test-context",
     "xtask",
+    "e2e",
 ]
 
 [workspace.package]

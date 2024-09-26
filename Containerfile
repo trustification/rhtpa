@@ -33,6 +33,7 @@ ENV TZ=UTC
 RUN mkdir trustify
 
 COPY --from=0 /usr/src/project/target/release/trustd trustify
+COPY --from=0 /usr/src/project/target/release/e2e trustify
 COPY --from=0 /usr/src/project/test.sh trustify
 
 RUN useradd -ms /bin/bash trustify

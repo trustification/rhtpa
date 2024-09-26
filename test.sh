@@ -11,14 +11,6 @@ done
 
 echo "Available on localhost:8080"
 
-HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" localhost:8080)
-
-if [ "$HTTP_STATUS" -eq 200 ]; then
-    TEST_OUTPUT="SUCCESS"
-else
-    TEST_OUTPUT="FAILURE"
-fi
-
-echo "Result: $TEST_OUTPUT"
+./e2e
 
 kill $APP_PID
