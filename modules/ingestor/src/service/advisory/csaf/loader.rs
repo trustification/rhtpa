@@ -1,3 +1,4 @@
+use crate::service::advisory::csaf::util::gen_identifier;
 use crate::{
     graph::{
         advisory::{
@@ -14,6 +15,7 @@ use csaf::{
     Csaf,
 };
 use sbom_walker::report::ReportSink;
+use semver::Version;
 use std::fmt::Debug;
 use std::str::FromStr;
 use time::OffsetDateTime;
@@ -28,6 +30,8 @@ impl<'a> From<Information<'a>> for AdvisoryInformation {
     fn from(value: Information<'a>) -> Self {
         let value = value.0;
         Self {
+            // TODO: consider failing if the version doesn't parse
+            version: parse_csaf_version(value),
             title: Some(value.document.title.clone()),
             issuer: Some(value.document.publisher.name.clone()),
             published: OffsetDateTime::from_unix_timestamp(
@@ -40,6 +44,28 @@ impl<'a> From<Information<'a>> for AdvisoryInformation {
             .ok(),
             withdrawn: None,
         }
+    }
+}
+
+/// Parse a CSAF tracking version.
+///
+/// This can be either a semantic version or a plain number. In case of a plain number, we use
+/// this as a major version.
+fn parse_csaf_version(csaf: &Csaf) -> Option<Version> {
+    // TODO: consider checking individual tracking records too
+    let version = &csaf.document.tracking.version;
+    if version.contains('.') {
+        csaf.document.tracking.version.parse().ok()
+    } else {
+        u64::from_str(version)
+            .map(|major| Version {
+                major,
+                minor: 0,
+                patch: 0,
+                pre: Default::default(),
+                build: Default::default(),
+            })
+            .ok()
     }
 }
 
@@ -63,7 +89,7 @@ impl<'g> CsafLoader<'g> {
 
         let tx = self.graph.transaction().await?;
 
-        let advisory_id = csaf.document.tracking.id.clone();
+        let advisory_id = gen_identifier(&csaf);
         let labels = labels.into().add("type", "csaf");
 
         let advisory = self

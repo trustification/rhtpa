@@ -1,0 +1,287 @@
+#![allow(clippy::expect_used)]
+
+use super::{prepare_ps_state_change, twice};
+use test_context::test_context;
+use test_log::test;
+use trustify_common::purl::Purl;
+use trustify_module_fundamental::{
+    purl::{
+        model::details::purl::{PurlStatus, StatusContext},
+        service::PurlService,
+    },
+    vulnerability::{model::VulnerabilityHead, service::VulnerabilityService},
+};
+use trustify_module_ingestor::common::Deprecation;
+use trustify_test_context::TrustifyContext;
+
+/// Ensure that ingesting the same document twice, leads to the same ID.
+#[test_context(TrustifyContext)]
+#[test(tokio::test)]
+async fn equal(ctx: &TrustifyContext) -> anyhow::Result<()> {
+    let (r1, r2) = twice(ctx, |csaf| csaf, |csaf| csaf).await?;
+
+    // no change, same result
+
+    assert_eq!(r1.id, r2.id);
+
+    // check info
+
+    let vuln = VulnerabilityService::new(ctx.db.clone());
+    let v = vuln
+        .fetch_vulnerability("CVE-2023-33201", Default::default(), ())
+        .await?
+        .expect("must exist");
+
+    assert_eq!(v.advisories.len(), 1);
+
+    // done
+
+    Ok(())
+}
+
+/// Ingest the same document, with an update on the product state.
+#[test_context(TrustifyContext)]
+#[test(tokio::test)]
+async fn change_ps_num_advisories(ctx: &TrustifyContext) -> anyhow::Result<()> {
+    let (r1, r2) = prepare_ps_state_change(ctx).await?;
+
+    // the internal document ID will change, it's a new document
+
+    assert_ne!(r1.id, r2.id);
+
+    // check info - non-deprecated
+
+    let vuln = VulnerabilityService::new(ctx.db.clone());
+    let v = vuln
+        .fetch_vulnerability("CVE-2023-33201", Deprecation::Ignore, ())
+        .await?
+        .expect("must exist");
+
+    assert_eq!(v.advisories.len(), 1);
+
+    // check info - with-deprecated
+
+    let vuln = VulnerabilityService::new(ctx.db.clone());
+    let v = vuln
+        .fetch_vulnerability("CVE-2023-33201", Deprecation::Consider, ())
+        .await?
+        .expect("must exist");
+
+    assert_eq!(v.advisories.len(), 2);
+
+    // done
+
+    Ok(())
+}
+
+/// Ingest the same document twice. First having an affected, then fixed state.
+#[test_context(TrustifyContext)]
+#[test(tokio::test)]
+async fn change_ps_list_vulns(ctx: &TrustifyContext) -> anyhow::Result<()> {
+    let (r1, r2) = prepare_ps_state_change(ctx).await?;
+
+    // the internal document ID will change, it's a new document
+
+    assert_ne!(r1.id, r2.id);
+
+    // check info
+
+    let service = PurlService::new(ctx.db.clone());
+    let purls = service
+        .purls(Default::default(), Default::default(), ())
+        .await?;
+
+    // pkg:rpm/redhat/eap7-bouncycastle@1.76.0-4.redhat_00001.1.el9eap?arch=noarch
+    let purl = purls
+        .items
+        .iter()
+        .find(|purl| {
+            purl.base.purl.name == "eap7-bouncycastle-util"
+                && purl.version.version == "1.76.0-4.redhat_00001.1.el9eap"
+        })
+        .expect("must find one");
+
+    assert_eq!(
+        purl.base.purl,
+        Purl {
+            ty: "rpm".to_string(),
+            namespace: Some("redhat".to_string()),
+            name: "eap7-bouncycastle-util".to_string(),
+            version: None,
+            qualifiers: Default::default(),
+        }
+    );
+    assert_eq!(purl.version.version, "1.76.0-4.redhat_00001.1.el9eap");
+
+    // FIXME(#879): I'd expect the qualifiers to be present, but they aren't.
+    /*
+    assert_eq!(
+        purl.qualifiers.clone().into_iter().collect::<Vec<_>>(),
+        vec![("arch".to_string(), "noarch".to_string())]
+    );
+    */
+
+    // get vuln by purl
+
+    let purl = service
+        .purl_by_uuid(&purl.head.uuid, Deprecation::Ignore, ())
+        .await?
+        .expect("must find something");
+
+    assert_eq!(purl.advisories.len(), 1);
+    let adv = &purl.advisories[0];
+
+    assert_eq!(
+        adv.head.identifier,
+        "https://www.redhat.com/#CVE-2023-33201"
+    );
+
+    // now check the details
+
+    assert_eq!(
+        adv.status,
+        vec![PurlStatus {
+            vulnerability: VulnerabilityHead {
+                normative: true,
+                identifier: "CVE-2023-33201".to_string(),
+                title: None,
+                description: None,
+                published: None,
+                modified: None,
+                withdrawn: None,
+                discovered: None,
+                released: None,
+                cwes: vec![],
+            },
+            status: "fixed".to_string(),
+            context: Some(StatusContext::Cpe(
+                "cpe:/a:redhat:jboss_enterprise_application_platform:7.4:*:el9:*".to_string()
+            )),
+        }]
+    );
+
+    // done
+
+    Ok(())
+}
+
+/// Ingest the same document twice. First having an affected, then fixed state.
+#[test_context(TrustifyContext)]
+#[test(tokio::test)]
+async fn change_ps_list_vulns_all(ctx: &TrustifyContext) -> anyhow::Result<()> {
+    let (r1, r2) = prepare_ps_state_change(ctx).await?;
+
+    // the internal document ID will change, it's a new document
+
+    assert_ne!(r1.id, r2.id);
+
+    // check info
+
+    let service = PurlService::new(ctx.db.clone());
+    let purls = service
+        .purls(Default::default(), Default::default(), ())
+        .await?;
+
+    // pkg:rpm/redhat/eap7-bouncycastle-util@1.76.0-4.redhat_00001.1.el9eap?arch=noarch
+    let purl = purls
+        .items
+        .iter()
+        .find(|purl| {
+            purl.base.purl.name == "eap7-bouncycastle-util"
+                && purl.version.version == "1.76.0-4.redhat_00001.1.el9eap"
+        })
+        .expect("must find one");
+
+    assert_eq!(
+        purl.base.purl,
+        Purl {
+            ty: "rpm".to_string(),
+            namespace: Some("redhat".to_string()),
+            name: "eap7-bouncycastle-util".to_string(),
+            version: None,
+            qualifiers: Default::default(),
+        }
+    );
+    assert_eq!(purl.version.version, "1.76.0-4.redhat_00001.1.el9eap");
+
+    // FIXME(#879): I'd expect the qualifiers to be present, but they aren't.
+    /*
+    assert_eq!(
+        purl.qualifiers.clone().into_iter().collect::<Vec<_>>(),
+        vec![("arch".to_string(), "noarch".to_string())]
+    );
+    */
+
+    // get vuln by purl
+
+    let mut purl = service
+        .purl_by_uuid(&purl.head.uuid, Deprecation::Consider, ())
+        .await?
+        .expect("must find something");
+
+    // must be 2, as we consider deprecated ones too
+
+    assert_eq!(purl.advisories.len(), 2);
+    purl.advisories
+        .sort_unstable_by(|a, b| a.head.modified.cmp(&b.head.modified));
+    let adv1 = &purl.advisories[0];
+    let adv2 = &purl.advisories[1];
+
+    assert_eq!(
+        adv1.head.identifier,
+        "https://www.redhat.com/#CVE-2023-33201"
+    );
+    assert_eq!(
+        adv2.head.identifier,
+        "https://www.redhat.com/#CVE-2023-33201"
+    );
+
+    // now check the details
+
+    assert_eq!(
+        adv1.status,
+        vec![PurlStatus {
+            vulnerability: VulnerabilityHead {
+                normative: true,
+                identifier: "CVE-2023-33201".to_string(),
+                title: None,
+                description: None,
+                published: None,
+                modified: None,
+                withdrawn: None,
+                discovered: None,
+                released: None,
+                cwes: vec![],
+            },
+            status: "affected".to_string(),
+            context: Some(StatusContext::Cpe(
+                "cpe:/a:redhat:jboss_enterprise_application_platform:7.4:*:el9:*".to_string()
+            )),
+        }]
+    );
+    assert_eq!(
+        adv2.status,
+        vec![PurlStatus {
+            vulnerability: VulnerabilityHead {
+                normative: true,
+                identifier: "CVE-2023-33201".to_string(),
+                title: None,
+                description: None,
+                published: None,
+                modified: None,
+                withdrawn: None,
+                discovered: None,
+                released: None,
+                cwes: vec![],
+            },
+            status: "fixed".to_string(),
+            context: Some(StatusContext::Cpe(
+                "cpe:/a:redhat:jboss_enterprise_application_platform:7.4:*:el9:*".to_string()
+            )),
+        }]
+    );
+
+    // done
+
+    Ok(())
+}
