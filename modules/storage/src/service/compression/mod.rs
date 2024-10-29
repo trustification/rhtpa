@@ -6,7 +6,9 @@ use std::task::{Context, Poll};
 use tokio::io;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufReader, ReadBuf};
 
-#[derive(Copy, Clone, Eq, PartialEq, Default, Debug, strum::EnumIter, clap::ValueEnum)]
+#[derive(
+    Copy, Clone, Eq, PartialEq, Default, Debug, strum::EnumIter, strum::EnumString, clap::ValueEnum,
+)]
 pub enum Compression {
     #[default]
     None,
@@ -27,6 +29,23 @@ impl Compression {
         match self {
             Self::None => "",
             Self::Zstd => "zstd",
+        }
+    }
+
+    pub fn content_encoding(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Zstd => "zstd",
+        }
+    }
+
+    pub async fn compress<R>(&self, r: R) -> Box<dyn AsyncRead + Unpin>
+    where
+        R: AsyncBufRead + Unpin + 'static,
+    {
+        match self {
+            Self::None => Box::new(r),
+            Self::Zstd => Box::new(bufread::ZstdEncoder::new(r)),
         }
     }
 

@@ -1,6 +1,5 @@
-use super::temp::TempFile;
 use crate::service::{
-    compression::Compression, StorageBackend, StorageKey, StorageResult, StoreError,
+    compression::Compression, temp::TempFile, StorageBackend, StorageKey, StorageResult, StoreError,
 };
 use anyhow::Context;
 use bytes::Bytes;
@@ -15,7 +14,7 @@ use strum::IntoEnumIterator;
 use tempfile::{tempdir, TempDir};
 use tokio::{
     fs::{create_dir_all, File},
-    io::{AsyncWriteExt, BufReader},
+    io::AsyncWriteExt,
 };
 use tokio_util::io::ReaderStream;
 
@@ -105,8 +104,8 @@ impl StorageBackend for FileSystemBackend {
         S: Stream<Item = Result<Bytes, E>>,
     {
         let stream = pin!(stream);
-        let mut file = TempFile::new(stream).await.map_err(StoreError::Backend)?;
-        let mut source = BufReader::new(file.reader().await.map_err(StoreError::Backend)?);
+        let mut file = TempFile::new(stream).await?;
+        let mut source = file.reader().await?;
 
         let result = file.result();
         let key = result.key().to_string();
@@ -114,20 +113,19 @@ impl StorageBackend for FileSystemBackend {
         // create the target path
 
         let target = level_dir(&self.content, &key, NUM_LEVELS);
-        create_dir_all(&target).await.map_err(StoreError::Backend)?;
+        create_dir_all(&target).await?;
         let mut target = target.join(&key);
         target.set_extension(self.write_compression.extension());
 
-        let mut target = File::create(target).await.map_err(StoreError::Backend)?;
+        let mut target = File::create(target).await?;
         self.write_compression
             .write(&mut source, &mut target)
-            .await
-            .map_err(StoreError::Backend)?;
+            .await?;
 
         // ensure we have all bytes on disk for the target file,
         // then close it
 
-        target.flush().await.map_err(StoreError::Backend)?;
+        target.flush().await?;
         drop(target);
 
         // the content is at the right place, close (destroy) the temp file
