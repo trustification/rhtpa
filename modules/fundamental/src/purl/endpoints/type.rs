@@ -1,12 +1,16 @@
-use crate::purl::service::PurlService;
+use crate::purl::{
+    model::{
+        details::{base_purl::BasePurlDetails, versioned_purl::VersionedPurlDetails},
+        summary::{base_purl::BasePurlSummary, r#type::TypeSummary},
+    },
+    service::PurlService,
+};
 use actix_web::{get, web, HttpResponse, Responder};
-use trustify_common::db::query::Query;
-use trustify_common::model::Paginated;
+use trustify_common::{db::query::Query, model::Paginated, model::PaginatedResults};
 
 #[utoipa::path(
     tag = "purl type",
     operation_id = "listPurlTypes",
-    context_path= "/api",
     params(
     ),
     responses(
@@ -22,14 +26,13 @@ pub async fn all_purl_types(service: web::Data<PurlService>) -> actix_web::Resul
 #[utoipa::path(
     tag = "purl type",
     operation_id = "getPurlType",
-    context_path= "/api",
     params(
         Query,
         Paginated,
         ("type" = String, Path, description = "PURL identifier of a type")
     ),
     responses(
-        (status = 200, description = "Information regarding PURLs within an type", body = PaginatedBasePurlSummary),
+        (status = 200, description = "Information regarding PURLs within an type", body = PaginatedResults<BasePurlSummary>),
     ),
 )]
 #[get("/v1/purl/type/{type}")]
@@ -50,7 +53,6 @@ pub async fn get_purl_type(
 #[utoipa::path(
     tag = "purl type",
     operation_id = "getBasePurlOfType",
-    context_path= "/api",
     params(
         ("type" = String, Path, description = "PURL identifier of a type"),
         ("namespace_and_name" = String, Path, description = "name of the package optionally preceded by its namespace"),
@@ -80,7 +82,6 @@ pub async fn get_base_purl_of_type(
 #[utoipa::path(
     tag = "purl",
     operation_id = "getVersionedPurlOfType",
-    context_path= "/api",
     params(
         ("type" = String, Path, description = "PURL identifier of a type"),
         ("namespace_and_name" = String, Path, description = "name of the package optionally preceded by its namespace"),

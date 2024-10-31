@@ -1,18 +1,21 @@
-use crate::license::service::LicenseService;
+use crate::license::{
+    model::SpdxLicenseDetails, model::SpdxLicenseSummary, service::LicenseService,
+};
 use actix_web::{get, web, HttpResponse, Responder};
-use trustify_common::db::query::Query;
-use trustify_common::model::Paginated;
+use trustify_common::{
+    db::query::Query,
+    model::{Paginated, PaginatedResults},
+};
 
 #[utoipa::path(
     tag = "spdx license",
     operation_id = "listSpdxLicenses",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching licenses", body = PaginatedSpdxLicenseSummary),
+        (status = 200, description = "Matching licenses", body = PaginatedResults<SpdxLicenseSummary>),
     ),
 )]
 #[get("/v1/license/spdx/license")]
@@ -30,7 +33,6 @@ pub async fn list_spdx_licenses(
 #[utoipa::path(
     tag = "spdx license",
     operation_id = "getSpdxLicense",
-    context_path = "/api",
     responses(
         (status = 200, description = "SPDX license details", body = SpdxLicenseDetails),
     ),

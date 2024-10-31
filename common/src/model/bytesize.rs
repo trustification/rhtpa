@@ -1,6 +1,7 @@
 use bytesize::ByteSize;
 use serde::{Serialize, Serializer};
 use std::{
+    borrow::Cow,
     fmt::{Display, Formatter},
     ops::{Deref, DerefMut},
     str::FromStr,
@@ -25,9 +26,15 @@ use utoipa::{
 )]
 pub struct BinaryByteSize(#[schemars(with = "ByteSizeDef")] pub ByteSize);
 
-impl<'s> ToSchema<'s> for BinaryByteSize {
-    fn schema() -> (&'s str, RefOr<Schema>) {
-        ("BinaryByteSize", String::schema())
+impl ToSchema for BinaryByteSize {
+    fn name() -> Cow<'static, str> {
+        "BinaryByteSize".into()
+    }
+}
+
+impl PartialSchema for BinaryByteSize {
+    fn schema() -> RefOr<Schema> {
+        String::schema()
     }
 }
 

@@ -8,9 +8,8 @@ use actix_http::header;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use itertools::Itertools;
 use trustify_common::db::Database;
-use utoipa::OpenApi;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let service = AiService::new(db.clone());
     config
         .app_data(web::Data::new(service))
@@ -20,24 +19,9 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(tool_call);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(completions, flags, tools, tool_call),
-    components(schemas(
-        crate::ai::model::ChatState,
-        crate::ai::model::ChatMessage,
-        crate::ai::model::MessageType,
-        crate::ai::model::AiFlags,
-        crate::ai::model::AiTool,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "ai",
     operation_id = "completions",
-    context_path = "/api",
     request_body = ChatState,
     responses(
         (status = 200, description = "The resulting completion", body = ChatState),
@@ -57,7 +41,6 @@ pub async fn completions(
 #[utoipa::path(
     tag = "ai",
     operation_id = "aiFlags",
-    context_path = "/api",
     responses(
         (status = 200, description = "The resulting Flags", body = AiFlags),
         (status = 404, description = "The AI service is not enabled")
@@ -74,7 +57,6 @@ pub async fn flags(service: web::Data<AiService>) -> actix_web::Result<impl Resp
 #[utoipa::path(
     tag = "ai",
     operation_id = "aiTools",
-    context_path = "/api",
     responses(
         (status = 200, description = "The resulting list of tools", body = Vec<AiTool>),
         (status = 404, description = "The AI service is not enabled")
@@ -98,7 +80,6 @@ pub async fn tools(service: web::Data<AiService>) -> actix_web::Result<impl Resp
 #[utoipa::path(
     tag = "ai",
     operation_id = "aiToolCall",
-    context_path = "/api",
     request_body = serde_json::Value,
     params(
         ("name", Path, description = "Name of the tool to call")

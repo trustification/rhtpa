@@ -1,11 +1,11 @@
-use crate::weakness::service::WeaknessService;
+use crate::{license::model::LicenseSummary, weakness::service::WeaknessService};
 use actix_web::{get, web, HttpResponse, Responder};
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::model::Paginated;
-use utoipa::OpenApi;
+use trustify_common::{
+    db::{query::Query, Database},
+    model::{Paginated, PaginatedResults},
+};
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let weakness_service = WeaknessService::new(db);
 
     config
@@ -14,29 +14,15 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(get_weakness);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(list_weaknesses, get_weakness,),
-    components(schemas(
-        crate::weakness::model::PaginatedWeaknessSummary,
-        crate::weakness::model::WeaknessSummary,
-        crate::weakness::model::WeaknessDetails,
-        crate::weakness::model::WeaknessHead,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "weakness",
     operation_id = "listWeaknesses",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching weaknesses", body = PaginatedLicenseSummary),
+        (status = 200, description = "Matching weaknesses", body = PaginatedResults<LicenseSummary>),
     ),
 )]
 #[get("/v1/weakness")]
@@ -52,7 +38,6 @@ pub async fn list_weaknesses(
 #[utoipa::path(
     tag = "weakness",
     operation_id = "getWeakness",
-    context_path = "/api",
     responses(
         (status = 200, description = "The weakness", body = LicenseSummary),
     ),

@@ -3,20 +3,14 @@ use crate::{
     service::{Error, IngestorService},
 };
 use actix_web::{post, web, HttpResponse, Responder};
-use trustify_common::db::Database;
+use trustify_common::{db::Database, model::BinaryData};
 use trustify_entity::labels::Labels;
 use trustify_module_storage::service::dispatch::DispatchBackend;
-use utoipa::{IntoParams, OpenApi};
-
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub struct Config {
-    /// Limit of a single content entry (after decompression).
-    pub dataset_entry_limit: usize,
-}
+use utoipa::IntoParams;
 
 /// mount the "ingestor" module
 pub fn configure(
-    svc: &mut web::ServiceConfig,
+    svc: &mut utoipa_actix_web::service_config::ServiceConfig,
     config: Config,
     db: Database,
     storage: impl Into<DispatchBackend>,
@@ -25,7 +19,13 @@ pub fn configure(
 
     svc.app_data(web::Data::new(ingestor_service))
         .app_data(web::Data::new(config))
-        .service(web::scope("/v1/dataset").service(upload));
+        .service(upload_dataset);
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct Config {
+    /// Limit of a single content entry (after decompression).
+    pub dataset_entry_limit: usize,
 }
 
 #[derive(
@@ -39,32 +39,19 @@ struct UploadParams {
     labels: Labels,
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(upload),
-    components(schemas(
-        crate::common::Deprecation,
-        crate::model::IngestResult,
-        crate::service::dataset::DatasetIngestResult,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
-    tag = "advisory",
+    tag = "dataset",
     operation_id = "uploadDataset",
-    context_path = "/api/v1/dataset",
-    request_body = Vec<u8>,
+    request_body = inline(BinaryData),
     params(UploadParams),
     responses(
         (status = 201, description = "Uploaded the dataset"),
         (status = 400, description = "The file could not be parsed as an dataset"),
     )
 )]
-#[post("")]
+#[post("/v1/dataset")]
 /// Upload a new dataset
-pub async fn upload(
+pub async fn upload_dataset(
     service: web::Data<IngestorService>,
     config: web::Data<Config>,
     web::Query(UploadParams { labels }): web::Query<UploadParams>,

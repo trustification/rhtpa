@@ -4,7 +4,10 @@ mod label;
 mod test;
 
 use crate::{
-    advisory::service::AdvisoryService,
+    advisory::{
+        model::{AdvisoryDetails, AdvisorySummary},
+        service::AdvisoryService,
+    },
     endpoints::Deprecation,
     purl::service::PurlService,
     Error::{self, Internal},
@@ -17,18 +20,24 @@ use trustify_common::{
     db::{query::Query, Database},
     decompress::decompress_async,
     id::Id,
-    model::Paginated,
+    model::{BinaryData, Paginated, PaginatedResults},
 };
 use trustify_entity::labels::Labels;
 use trustify_module_ingestor::service::{Format, IngestorService};
 use trustify_module_storage::service::StorageBackend;
-use utoipa::{IntoParams, OpenApi};
+use utoipa::IntoParams;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database, upload_limit: usize) {
-    let advisory_service = AdvisoryService::new(db);
+pub fn configure(
+    config: &mut utoipa_actix_web::service_config::ServiceConfig,
+    db: Database,
+    upload_limit: usize,
+) {
+    let advisory_service = AdvisoryService::new(db.clone());
+    let purl_service = PurlService::new(db);
 
     config
         .app_data(web::Data::new(advisory_service))
+        .app_data(web::Data::new(purl_service))
         .app_data(web::Data::new(Config { upload_limit }))
         .service(all)
         .service(get)
@@ -39,39 +48,16 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database, upload_limit: us
         .service(label::update);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(all, get, delete, upload, download, label::set, label::update),
-    components(schemas(
-        crate::advisory::model::AdvisoryDetails,
-        crate::advisory::model::AdvisoryHead,
-        crate::advisory::model::AdvisorySummary,
-        crate::advisory::model::AdvisoryVulnerabilityHead,
-        crate::advisory::model::AdvisoryVulnerabilitySummary,
-        crate::advisory::model::PaginatedAdvisorySummary,
-        crate::source_document::model::SourceDocument,
-        trustify_common::advisory::AdvisoryVulnerabilityAssertions,
-        trustify_common::advisory::Assertion,
-        trustify_common::id::Id,
-        trustify_common::purl::Purl,
-        trustify_cvss::cvss3::severity::Severity,
-        trustify_entity::labels::Labels,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "advisory",
     operation_id = "listAdvisories",
-    context_path = "/api",
     params(
         Query,
         Paginated,
         Deprecation,
     ),
     responses(
-        (status = 200, description = "Matching vulnerabilities", body = PaginatedAdvisorySummary),
+        (status = 200, description = "Matching vulnerabilities", body = PaginatedResults<AdvisorySummary>),
     ),
 )]
 #[get("/v1/advisory")]
@@ -92,9 +78,8 @@ pub async fn all(
 #[utoipa::path(
     tag = "advisory",
     operation_id = "getAdvisory",
-    context_path = "/api",
     params(
-        ("key" = string, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
+        ("key" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
     ),
     responses(
         (status = 200, description = "Matching advisory", body = AdvisoryDetails),
@@ -120,9 +105,8 @@ pub async fn get(
 #[utoipa::path(
     tag = "advisory",
     operation_id = "deleteAdvisory",
-    context_path = "/api",
     params(
-        ("key" = string, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
+        ("key" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
     ),
     responses(
         (status = 200, description = "Matching advisory", body = AdvisoryDetails),
@@ -171,8 +155,7 @@ struct UploadParams {
 #[utoipa::path(
     tag = "advisory",
     operation_id = "uploadAdvisory",
-    context_path = "/api",
-    request_body = Vec<u8>,
+    request_body = inline(BinaryData),
     params(UploadParams),
     responses(
         (status = 201, description = "Upload a file"),
@@ -199,12 +182,11 @@ pub async fn upload(
 #[utoipa::path(
     tag = "advisory",
     operation_id = "downloadAdvisory",
-    context_path = "/api",
     params(
         ("key" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>'"),
     ),
     responses(
-        (status = 200, description = "Download a an advisory", body = Vec<u8>),
+        (status = 200, description = "Download a an advisory", body = inline(BinaryData)),
         (status = 404, description = "The document could not be found"),
     )
 )]

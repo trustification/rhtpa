@@ -1,14 +1,13 @@
 use super::service::AnalysisService;
-use crate::Error;
+use crate::{
+    model::{AnalysisStatus, AncestorSummary, DepSummary},
+    Error,
+};
 use actix_web::{get, web, HttpResponse, Responder};
 use std::str::FromStr;
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::model::Paginated;
-use trustify_common::purl::Purl;
-use utoipa::OpenApi;
+use trustify_common::{db::query::Query, db::Database, model::Paginated, purl::Purl};
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let analysis = AnalysisService::new(db);
 
     config
@@ -19,29 +18,8 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(search_component_deps)
         .service(get_component_deps);
 }
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        analysis_status,
-        search_component_root_components,
-        get_component_root_components,
-        search_component_deps,
-        get_component_deps,
-    ),
-    components(schemas(
-        crate::model::PackageNode,
-        crate::model::AnalysisStatus,
-        crate::model::AncestorSummary,
-        crate::model::AncNode,
-        crate::model::DepSummary,
-        crate::model::DepNode,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
 
 #[utoipa::path(
-    context_path = "/api",
     tag = "analysis",
     operation_id = "status",
     responses(
@@ -56,7 +34,6 @@ pub async fn analysis_status(
 }
 
 #[utoipa::path(
-    context_path = "/api",
     tag = "analysis",
     operation_id = "searchComponentRootComponents",
     params(
@@ -81,7 +58,6 @@ pub async fn search_component_root_components(
 }
 
 #[utoipa::path(
-    context_path= "/api",
     tag = "analysis",
     operation_id = "getComponentRootComponents",
     params(
@@ -114,7 +90,6 @@ pub async fn get_component_root_components(
 }
 
 #[utoipa::path(
-    context_path = "/api",
     tag = "analysis",
     operation_id = "searchComponentDeps",
     params(
@@ -135,7 +110,6 @@ pub async fn search_component_deps(
 }
 
 #[utoipa::path(
-    context_path= "/api",
     tag = "analysis",
     operation_id = "getComponentDeps",
     params(

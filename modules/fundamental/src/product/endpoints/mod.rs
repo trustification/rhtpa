@@ -1,16 +1,21 @@
 #[cfg(test)]
 mod test;
 
-use crate::product::service::ProductService;
-use crate::Error::Internal;
+use crate::{
+    product::{
+        model::{details::ProductDetails, summary::ProductSummary},
+        service::ProductService,
+    },
+    Error::Internal,
+};
 use actix_web::{delete, get, web, HttpResponse, Responder};
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::model::Paginated;
-use utoipa::OpenApi;
+use trustify_common::{
+    db::{query::Query, Database},
+    model::{Paginated, PaginatedResults},
+};
 use uuid::Uuid;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let service = ProductService::new(db);
     config
         .app_data(web::Data::new(service))
@@ -19,32 +24,15 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(get);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(all, delete, get),
-    components(schemas(
-        crate::product::model::ProductHead,
-        crate::product::model::ProductVersionHead,
-        crate::product::model::details::ProductVersionDetails,
-        crate::product::model::details::ProductSbomHead,
-        crate::product::model::summary::ProductSummary,
-        crate::product::model::summary::PaginatedProductSummary,
-        crate::product::model::details::ProductDetails,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "product",
     operation_id = "listProducts",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching products", body = PaginatedProductSummary),
+        (status = 200, description = "Matching products", body = PaginatedResults<ProductSummary>),
     ),
 )]
 #[get("/v1/product")]
@@ -59,7 +47,6 @@ pub async fn all(
 #[utoipa::path(
     tag = "product",
     operation_id = "getProduct",
-    context_path = "/api",
     params(
         ("id", Path, description = "Opaque ID of the product")
     ),
@@ -84,7 +71,6 @@ pub async fn get(
 #[utoipa::path(
     tag = "product",
     operation_id = "deleteProduct",
-    context_path = "/api",
     params(
         ("id", Path, description = "Opaque ID of the product")
     ),

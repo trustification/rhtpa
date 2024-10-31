@@ -1,7 +1,7 @@
 use actix_web::{
     get,
     http::header::AUTHORIZATION,
-    web::{self, ServiceConfig},
+    web::{self},
     HttpRequest, HttpResponse,
 };
 use build_info::BuildInfo;
@@ -9,9 +9,10 @@ use std::sync::Arc;
 use trustify_auth::authenticator::{user::UserInformation, Authenticator};
 use trustify_infrastructure::app::new_auth;
 use utoipa::OpenApi;
+use utoipa_actix_web::service_config::ServiceConfig;
 
 pub fn configure(svc: &mut ServiceConfig, auth: Option<Arc<Authenticator>>) {
-    let mut scope = web::scope("/.well-known/trustify");
+    let mut scope = utoipa_actix_web::scope("/.well-known/trustify");
 
     if let Some(auth) = auth {
         scope = scope.app_data(web::Data::from(auth));
@@ -21,7 +22,7 @@ pub fn configure(svc: &mut ServiceConfig, auth: Option<Arc<Authenticator>>) {
 }
 
 #[derive(OpenApi)]
-#[openapi(paths(info), components(schemas(crate::endpoints::Info)), tags())]
+#[openapi(paths(info), tags())]
 pub struct ApiDoc;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
@@ -35,7 +36,6 @@ struct Info<'a> {
 build_info::build_info!(fn build_info);
 
 #[utoipa::path(
-    context_path = "/.well-known/trustify",
     responses(
         (status = 200, description = "Get information", body = inline(Info)),
     ),

@@ -1,15 +1,15 @@
-use crate::purl::service::PurlService;
-use crate::Error;
+use crate::{
+    purl::{model::details::versioned_purl::VersionedPurlDetails, service::PurlService},
+    Error,
+};
 use actix_web::{get, web, HttpResponse, Responder};
 use sea_orm::prelude::Uuid;
 use std::str::FromStr;
-use trustify_common::id::IdError;
-use trustify_common::purl::Purl;
+use trustify_common::{id::IdError, purl::Purl};
 
 #[utoipa::path(
     tag = "versioned purl",
     operation_id = "getVersionedPurl",
-    context_path= "/api",
     params(
         ("key" = String, Path, description = "opaque ID identifier for a package version, or URL-ecnoded pURL itself")
     ),

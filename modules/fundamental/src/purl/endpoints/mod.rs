@@ -1,21 +1,24 @@
-use crate::endpoints::Deprecation;
-use crate::purl::service::PurlService;
-use crate::Error;
+use crate::{
+    endpoints::Deprecation,
+    purl::{
+        model::{details::purl::PurlDetails, summary::purl::PurlSummary},
+        service::PurlService,
+    },
+    Error,
+};
 use actix_web::{get, web, HttpResponse, Responder};
 use sea_orm::prelude::Uuid;
 use std::str::FromStr;
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::id::IdError;
-use trustify_common::model::Paginated;
-use trustify_common::purl::Purl;
-use utoipa::OpenApi;
+use trustify_common::{
+    db::query::Query, db::Database, id::IdError, model::Paginated, model::PaginatedResults,
+    purl::Purl,
+};
 
 mod base;
 mod r#type;
 mod version;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let purl_service = PurlService::new(db);
 
     config
@@ -31,47 +34,7 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(all);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        r#type::all_purl_types,
-        r#type::get_purl_type,
-        r#type::get_base_purl_of_type,
-        r#type::get_versioned_purl_of_type,
-        base::all_base_purls,
-        base::get_base_purl,
-        version::get_versioned_purl,
-        get,
-        all,
-    ),
-    components(schemas(
-        crate::purl::model::TypeHead,
-        crate::purl::model::PurlHead,
-        crate::purl::model::VersionedPurlHead,
-        crate::purl::model::BasePurlHead,
-        crate::purl::model::summary::r#type::TypeSummary,
-        crate::purl::model::summary::r#type::TypeCounts,
-        crate::purl::model::summary::base_purl::BasePurlSummary,
-        crate::purl::model::details::base_purl::BasePurlDetails,
-        crate::purl::model::summary::base_purl::PaginatedBasePurlSummary,
-        crate::purl::model::summary::versioned_purl::VersionedPurlSummary,
-        crate::purl::model::details::versioned_purl::VersionedPurlDetails,
-        crate::purl::model::details::versioned_purl::VersionedPurlAdvisory,
-        crate::purl::model::details::versioned_purl::VersionedPurlStatus,
-        crate::purl::model::details::purl::PurlDetails,
-        crate::purl::model::details::purl::PurlAdvisory,
-        crate::purl::model::details::purl::PurlStatus,
-        crate::purl::model::details::purl::PurlLicenseSummary,
-        crate::purl::model::summary::purl::PurlSummary,
-        crate::purl::model::summary::purl::PaginatedPurlSummary,
-        trustify_common::purl::Purl,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
-    context_path= "/api",
     operation_id = "getPurl",
     tag = "purl",
     params(
@@ -99,7 +62,6 @@ pub async fn get(
 }
 
 #[utoipa::path(
-    context_path= "/api",
     operation_id = "listPurl",
     tag = "purl",
     params(
@@ -107,7 +69,7 @@ pub async fn get(
         Paginated,
     ),
     responses(
-        (status = 200, description = "All relevant matching qualified PURLs", body = PaginatedPurlSummary),
+        (status = 200, description = "All relevant matching qualified PURLs", body = PaginatedResults<PurlSummary>),
     ),
 )]
 #[get("/v1/purl")]

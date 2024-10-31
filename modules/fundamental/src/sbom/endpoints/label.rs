@@ -7,7 +7,6 @@ use trustify_entity::labels::Labels;
 #[utoipa::path(
     tag = "sbom",
     operation_id = "patchSbomLabels",
-    context_path = "/api",
     request_body = Labels,
     params(
         ("id" = Id, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
@@ -38,7 +37,6 @@ pub async fn update(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "updateSbomLabels",
-    context_path = "/api",
     request_body = Labels,
     params(
         ("id" = Id, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),

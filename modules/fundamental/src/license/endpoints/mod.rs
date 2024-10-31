@@ -1,17 +1,23 @@
-use crate::license::endpoints::spdx::{get_spdx_license, list_spdx_licenses};
-use crate::license::service::LicenseService;
-use crate::Error;
+use crate::{
+    license::{
+        endpoints::spdx::{get_spdx_license, list_spdx_licenses},
+        model::LicenseSummary,
+        service::LicenseService,
+    },
+    Error,
+};
 use actix_web::{get, web, HttpResponse, Responder};
 use std::str::FromStr;
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::id::IdError;
-use trustify_common::model::Paginated;
-use utoipa::OpenApi;
+use trustify_common::{
+    db::{query::Query, Database},
+    id::IdError,
+    model::{Paginated, PaginatedResults},
+};
 use uuid::Uuid;
 
 pub mod spdx;
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let license_service = LicenseService::new(db);
 
     config
@@ -23,38 +29,15 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(get_license_purls);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        spdx::list_spdx_licenses,
-        spdx::get_spdx_license,
-        list_licenses,
-        get_license,
-        get_license_purls,
-    ),
-    components(schemas(
-        crate::license::model::PaginatedSpdxLicenseSummary,
-        crate::license::model::SpdxLicenseSummary,
-        crate::license::model::SpdxLicenseDetails,
-        crate::license::model::PaginatedLicenseSummary,
-        crate::license::model::LicenseSummary,
-        crate::license::model::PaginatedLicenseDetailsPurlSummary,
-        crate::license::model::LicenseDetailsPurlSummary,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "license",
     operation_id = "listLicenses",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching licenses", body = PaginatedLicenseSummary),
+        (status = 200, description = "Matching licenses", body = PaginatedResults<LicenseSummary>),
     ),
 )]
 #[get("/v1/license")]
@@ -70,7 +53,6 @@ pub async fn list_licenses(
 #[utoipa::path(
     tag = "license",
     operation_id = "getLicenses",
-    context_path = "/api",
     responses(
         (status = 200, description = "The license", body = LicenseSummary),
     ),
@@ -87,7 +69,6 @@ pub async fn get_license(
 #[utoipa::path(
     tag = "license",
     operation_id = "getLicensePurls",
-    context_path = "/api",
     params(
         Query,
         Paginated,

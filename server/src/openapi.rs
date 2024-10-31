@@ -1,21 +1,34 @@
-use utoipa::openapi::security::{OpenIdConnect, SecurityScheme};
-use utoipa::{Modify, OpenApi};
+use crate::{configure, default_openapi_info, Config, ModuleConfig};
+use actix_web::App;
+use trustify_common::{config::Database, db};
+use trustify_module_storage::service::{dispatch::DispatchBackend, fs::FileSystemBackend};
+use utoipa::{
+    openapi::security::{OpenIdConnect, SecurityScheme},
+    Modify, OpenApi,
+};
+use utoipa_actix_web::AppExt;
 
-#[derive(OpenApi)]
-#[openapi(paths(), components(), tags())]
-pub struct ApiDoc;
+pub async fn create_openapi() -> anyhow::Result<utoipa::openapi::OpenApi> {
+    let (db, postgresql) = db::embedded::create().await?;
+    let (storage, _temp) = FileSystemBackend::for_test().await?;
 
-pub fn openapi() -> utoipa::openapi::OpenApi {
-    let mut doc = ApiDoc::openapi();
+    let (_, mut openapi) = App::new()
+        .into_utoipa_app()
+        .configure(|svc| {
+            configure(
+                svc,
+                Config {
+                    config: ModuleConfig::default(),
+                    db,
+                    storage: storage.into(),
+                    auth: None,
+                    with_graphql: true,
+                },
+            );
+        })
+        .split_for_parts();
 
-    doc.info.title = "Trustify".to_string();
-    doc.info.description = Some("Software Supply-Chain Security API".to_string());
-    doc.info.version = env!("CARGO_PKG_VERSION").to_string();
+    openapi.info = default_openapi_info();
 
-    doc.merge(crate::endpoints::ApiDoc::openapi());
-    doc.merge(trustify_module_importer::endpoints::ApiDoc::openapi());
-    doc.merge(trustify_module_ingestor::endpoints::ApiDoc::openapi());
-    doc.merge(trustify_module_fundamental::openapi());
-    doc.merge(trustify_module_analysis::endpoints::ApiDoc::openapi());
-    doc
+    Ok(openapi)
 }

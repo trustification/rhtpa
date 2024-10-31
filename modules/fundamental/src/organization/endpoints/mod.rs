@@ -1,15 +1,18 @@
 #[cfg(test)]
 mod test;
 
-use crate::organization::service::OrganizationService;
+use crate::organization::{
+    model::{OrganizationDetails, OrganizationSummary},
+    service::OrganizationService,
+};
 use actix_web::{get, web, HttpResponse, Responder};
-use trustify_common::db::query::Query;
-use trustify_common::db::Database;
-use trustify_common::model::Paginated;
-use utoipa::OpenApi;
+use trustify_common::{
+    db::{query::Query, Database},
+    model::Paginated,
+};
 use uuid::Uuid;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database) {
+pub fn configure(config: &mut utoipa_actix_web::service_config::ServiceConfig, db: Database) {
     let service = OrganizationService::new(db);
     config
         .app_data(web::Data::new(service))
@@ -17,29 +20,15 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database) {
         .service(get);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(all, get),
-    components(schemas(
-        crate::organization::model::OrganizationHead,
-        crate::organization::model::OrganizationSummary,
-        crate::organization::model::OrganizationDetails,
-        crate::organization::model::PaginatedOrganizationSummary,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "organization",
     operation_id = "listOrganizations",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching organizations", body = PaginatedOrganizationSummary),
+        (status = 200, description = "Matching organizations", body = OrganizationSummary),
     ),
 )]
 #[get("/v1/organization")]
@@ -55,7 +44,6 @@ pub async fn all(
 #[utoipa::path(
     tag = "organization",
     operation_id = "getOrganization",
-    context_path = "/api",
     params(
         ("id", Path, description = "Opaque ID of the organization")
     ),

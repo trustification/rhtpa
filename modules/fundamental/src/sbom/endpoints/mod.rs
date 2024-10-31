@@ -6,7 +6,10 @@ mod test;
 use crate::{
     purl::service::PurlService,
     sbom::{
-        model::{SbomPackageReference, Which},
+        model::{
+            details::SbomAdvisory, SbomPackage, SbomPackageReference, SbomPackageRelation,
+            SbomSummary, Which,
+        },
         service::SbomService,
     },
     Error::{self, Internal},
@@ -26,19 +29,27 @@ use trustify_common::{
     decompress::decompress_async,
     error::ErrorInformation,
     id::Id,
-    model::Paginated,
+    model::{BinaryData, Paginated, PaginatedResults},
     purl::Purl,
 };
 use trustify_entity::{labels::Labels, relationship::Relationship};
-use trustify_module_ingestor::service::{Format, IngestorService};
+use trustify_module_ingestor::{
+    model::IngestResult,
+    service::{Format, IngestorService},
+};
 use trustify_module_storage::service::StorageBackend;
-use utoipa::OpenApi;
 
-pub fn configure(config: &mut web::ServiceConfig, db: Database, upload_limit: usize) {
-    let sbom_service = SbomService::new(db);
+pub fn configure(
+    config: &mut utoipa_actix_web::service_config::ServiceConfig,
+    db: Database,
+    upload_limit: usize,
+) {
+    let sbom_service = SbomService::new(db.clone());
+    let purl_service = PurlService::new(db);
 
     config
         .app_data(web::Data::new(sbom_service))
+        .app_data(web::Data::new(purl_service))
         .app_data(web::Data::new(Config { upload_limit }))
         .service(all)
         .service(all_related)
@@ -54,57 +65,15 @@ pub fn configure(config: &mut web::ServiceConfig, db: Database, upload_limit: us
         .service(label::update);
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        all,
-        all_related,
-        get,
-        get_sbom_advisories,
-        delete,
-        packages,
-        related,
-        upload,
-        download,
-        label::set,
-        label::update,
-    ),
-    components(schemas(
-        crate::purl::model::details::purl::StatusContext,
-        crate::sbom::model::PaginatedSbomPackage,
-        crate::sbom::model::PaginatedSbomPackageRelation,
-        crate::sbom::model::PaginatedSbomSummary,
-        crate::sbom::model::SbomHead,
-        crate::sbom::model::SbomPackage,
-        crate::sbom::model::SbomPackageRelation,
-        crate::sbom::model::SbomSummary,
-        crate::sbom::model::Which,
-        crate::sbom::model::details::SbomAdvisory,
-        crate::sbom::model::details::SbomDetails,
-        crate::sbom::model::details::SbomStatus,
-        crate::purl::model::details::purl::StatusContext,
-        crate::source_document::model::SourceDocument,
-        trustify_common::advisory::AdvisoryVulnerabilityAssertions,
-        trustify_common::advisory::Assertion,
-        trustify_common::id::Id,
-        trustify_common::purl::Purl,
-        trustify_entity::labels::Labels,
-        trustify_entity::relationship::Relationship,
-    )),
-    tags()
-)]
-pub struct ApiDoc;
-
 #[utoipa::path(
     tag = "sbom",
     operation_id = "listSboms",
-    context_path = "/api",
     params(
         Query,
         Paginated,
     ),
     responses(
-        (status = 200, description = "Matching SBOMs", body = PaginatedSbomSummary),
+        (status = 200, description = "Matching SBOMs", body = PaginatedResults<SbomSummary>),
     ),
 )]
 #[get("/v1/sbom")]
@@ -179,14 +148,13 @@ impl TryFrom<AllRelatedQuery> for Uuid {
 #[utoipa::path(
     tag = "sbom",
     operation_id = "listRelatedSboms",
-    context_path = "/api",
     params(
         Query,
         Paginated,
         AllRelatedQuery,
     ),
     responses(
-        (status = 200, description = "Matching SBOMs", body = PaginatedSbomSummary),
+        (status = 200, description = "Matching SBOMs", body = PaginatedResults<SbomSummary>),
     ),
 )]
 #[get("/v1/sbom/by-package")]
@@ -214,7 +182,6 @@ pub async fn all_related(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "countRelatedSboms",
-    context_path = "/api",
     params(
         AllRelatedQuery,
     ),
@@ -244,9 +211,8 @@ pub async fn count_related(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "getSbom",
-    context_path = "/api",
     params(
-        ("id" = string, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
+        ("id" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
     ),
     responses(
         (status = 200, description = "Matching SBOM", body = SbomSummary),
@@ -272,9 +238,8 @@ pub async fn get(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "getSbomAdvisories",
-    context_path = "/api",
     params(
-        ("id" = string, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
+        ("id" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
     ),
     responses(
         (status = 200, description = "Matching SBOM", body = Vec<SbomAdvisory>),
@@ -301,9 +266,8 @@ pub async fn get_sbom_advisories(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "deleteSbom",
-    context_path = "/api",
     params(
-        ("id" = string, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
+        ("id" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>' or 'urn:uuid:<uuid>'"),
     ),
     responses(
         (status = 200, description = "Matching SBOM", body = SbomSummary),
@@ -340,7 +304,6 @@ pub async fn delete(
 /// Search for packages of an SBOM
 #[utoipa::path(
     tag = "sbom",
-    context_path = "/api",
     operation_id = "listPackages",
     params(
         ("id", Path, description = "ID of the SBOM to get packages for"),
@@ -348,7 +311,7 @@ pub async fn delete(
         Paginated,
     ),
     responses(
-        (status = 200, description = "Packages", body = PaginatedSbomPackage),
+        (status = 200, description = "Packages", body = PaginatedResults<SbomPackage>),
     ),
 )]
 #[get("/v1/sbom/{id}/packages")]
@@ -375,6 +338,7 @@ struct RelatedQuery {
     pub reference: Option<String>,
     /// Which side the reference should be on
     #[serde(default)]
+    #[param(inline)]
     pub which: Which,
     /// Optional relationship filter
     #[serde(default)]
@@ -385,7 +349,6 @@ struct RelatedQuery {
 #[utoipa::path(
     tag = "sbom",
     operation_id = "listRelatedPackages",
-    context_path = "/api",
     params(
         ("id", Path, description = "ID of SBOM to search packages in"),
         RelatedQuery,
@@ -393,7 +356,7 @@ struct RelatedQuery {
         Paginated,
     ),
     responses(
-        (status = 200, description = "Packages", body = PaginatedSbomPackageRelation),
+        (status = 200, description = "Packages", body = PaginatedResults<SbomPackageRelation>),
     ),
 )]
 #[get("/v1/sbom/{id}/related")]
@@ -440,7 +403,6 @@ struct UploadQuery {
 #[utoipa::path(
     tag = "sbom",
     operation_id = "uploadSbom",
-    context_path = "/api",
     request_body = Vec <u8>,
     params(
         UploadQuery,
@@ -469,12 +431,11 @@ pub async fn upload(
 #[utoipa::path(
     tag = "sbom",
     operation_id = "downloadSbom",
-    context_path = "/api",
     params(
         ("key" = String, Path, description = "Digest/hash of the document, prefixed by hash type, such as 'sha256:<hash>'"),
     ),
     responses(
-        (status = 200, description = "Download a an SBOM", body = Vec<u8>),
+        (status = 200, description = "Download a an SBOM", body = inline(BinaryData)),
         (status = 404, description = "The document could not be found"),
     )
 )]
