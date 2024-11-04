@@ -1,19 +1,22 @@
+mod columns;
+mod filter;
+mod filtering;
+mod sort;
+mod value;
+
+pub use columns::{Columns, IntoColumns};
+pub use filtering::Filtering;
+use sea_orm::{QueryFilter, QueryOrder};
+pub use value::Value;
+
+use filter::{Filter, Operator};
 use regex::Regex;
-use sea_orm::{EntityTrait, QueryFilter, Select};
 use serde::{Deserialize, Serialize};
+use sort::Sort;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use utoipa::{IntoParams, ToSchema};
-
-mod columns;
-pub use columns::{Columns, IntoColumns};
-mod value;
-pub use value::Value;
-mod filter;
-use filter::{Filter, Operator};
-mod sort;
-use sort::Sort;
 
 /// Convenience function for creating a search Query
 ///
@@ -25,42 +28,6 @@ use sort::Sort;
 /// ```
 pub fn q(s: &str) -> Query {
     Query::q(s)
-}
-
-/// Pass a Query instance for filtering
-pub trait Filtering<T: EntityTrait> {
-    fn filtering(self, search: Query) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        self.filtering_with(search, Columns::from_entity::<T>())
-    }
-
-    fn filtering_with<C: IntoColumns>(self, search: Query, context: C) -> Result<Self, Error>
-    where
-        Self: Sized;
-}
-
-/// Implement filtering for a Select statement
-impl<T: EntityTrait> Filtering<T> for Select<T> {
-    fn filtering_with<C: IntoColumns>(self, search: Query, context: C) -> Result<Self, Error> {
-        let Query { q, sort, .. } = &search;
-        log::debug!("filtering with: q='{q}' sort='{sort}'");
-        let columns = context.columns();
-        // filter the query
-        let result = if q.is_empty() {
-            self
-        } else {
-            self.filter(search.filter_for(&columns)?)
-        };
-        // sort the query
-        Ok(sort
-            .split_terminator(',')
-            .map(|s| Sort::parse(s, &columns))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .fold(result, |select, s| s.order_by(select)))
-    }
 }
 
 impl Query {
@@ -187,16 +154,36 @@ impl Query {
 
     fn filter_for(&self, columns: &Columns) -> Result<Filter, Error> {
         let constraints = self.parse();
-        if constraints.len() == 1 {
-            constraints[0].filter_for(columns)
-        } else {
-            Ok(Filter::all(
+        Ok(match constraints.len() {
+            1 => constraints[0].filter_for(columns)?,
+            _ => Filter::all(
                 constraints
                     .iter()
                     .map(|constraint| constraint.filter_for(columns))
                     .collect::<Result<Vec<_>, _>>()?,
-            ))
-        }
+            ),
+        })
+    }
+
+    fn query<T>(&self, stmt: T, columns: &Columns) -> Result<T, Error>
+    where
+        T: QueryFilter + QueryOrder,
+    {
+        let Self { q, sort } = self;
+        log::debug!("Query with: q='{q}' sort='{sort}'");
+
+        let stmt = if q.is_empty() {
+            stmt
+        } else {
+            stmt.filter(self.filter_for(columns)?)
+        };
+
+        Ok(sort
+            .split_terminator(',')
+            .map(|s| Sort::parse(s, columns))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .fold(stmt, |select, s| s.order_by(select)))
     }
 }
 
@@ -239,7 +226,7 @@ impl Constraint {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use sea_orm::{QueryOrder, QuerySelect, QueryTrait};
+    use sea_orm::{EntityTrait, QueryOrder, QuerySelect, QueryTrait};
     use test_log::test;
 
     #[test(tokio::test)]

@@ -1,6 +1,6 @@
 use sea_orm::entity::ColumnDef;
 use sea_orm::{sea_query, ColumnTrait, EntityTrait, IntoIdentity, Iterable};
-use sea_query::{ColumnRef, IntoColumnRef};
+use sea_query::{Alias, ColumnRef, IntoColumnRef, IntoIden};
 
 /// Context of columns which can be used for filtering and sorting.
 #[derive(Default, Debug, Clone)]
@@ -74,6 +74,21 @@ impl Columns {
     /// Add a translator to the context
     pub fn translator(mut self, f: Translator) -> Self {
         self.translator = Some(f);
+        self
+    }
+
+    /// Alias a table name
+    pub fn alias(mut self, from: &str, to: &str) -> Self {
+        self.columns = self
+            .columns
+            .into_iter()
+            .map(|(r, d)| match r {
+                ColumnRef::TableColumn(t, c) if t.to_string().eq_ignore_ascii_case(from) => {
+                    (ColumnRef::TableColumn(Alias::new(to).into_iden(), c), d)
+                }
+                _ => (r, d),
+            })
+            .collect();
         self
     }
 
@@ -220,6 +235,27 @@ mod tests {
             q("severity=low|high"),
             r#"("advisory"."score" >= 0 AND "advisory"."score" < 3) OR ("advisory"."score" >= 6 AND "advisory"."score" < 10)"#,
         );
+
+        Ok(())
+    }
+
+    #[test(tokio::test)]
+    async fn table_aliasing() -> Result<(), anyhow::Error> {
+        let clause = advisory::Entity::find()
+            .select_only()
+            .column(advisory::Column::Id)
+            .filtering_with(
+                q("location=here"),
+                advisory::Entity.columns().alias("advisory", "foo"),
+            )?
+            .build(sea_orm::DatabaseBackend::Postgres)
+            .to_string()
+            .split("WHERE ")
+            .last()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(clause, r#""foo"."location" = 'here'"#);
 
         Ok(())
     }
