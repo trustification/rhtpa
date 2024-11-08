@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 use sea_orm::entity::ColumnDef;
@@ -5,11 +6,14 @@ use sea_orm::{sea_query, ColumnTrait, ColumnType, EntityTrait, IntoIdentity, Ite
 use sea_query::extension::postgres::PgExpr;
 use sea_query::{Alias, ColumnRef, Expr, IntoColumnRef, IntoIden};
 
+use super::Error;
+
 /// Context of columns which can be used for filtering and sorting.
 #[derive(Default, Debug, Clone)]
 pub struct Columns {
     columns: Vec<(ColumnRef, ColumnDef)>,
     translator: Option<Translator>,
+    json_keys: HashMap<&'static str, &'static str>,
 }
 
 impl Display for Columns {
@@ -73,6 +77,7 @@ impl Columns {
         Self {
             columns,
             translator: None,
+            json_keys: HashMap::new(),
         }
     }
 
@@ -124,12 +129,20 @@ impl Columns {
         self
     }
 
+    /// Declare which query fields are the nested keys of a JSON column
+    pub fn json_keys(mut self, column: &'static str, fields: &[&'static str]) -> Self {
+        for each in fields {
+            self.json_keys.insert(each, column);
+        }
+        self
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &(ColumnRef, ColumnDef)> {
         self.columns.iter()
     }
 
     /// Look up the column context for a given simple field name.
-    pub(crate) fn for_field(&self, field: &str) -> Option<(Expr, ColumnDef)> {
+    pub(crate) fn for_field(&self, field: &str) -> Result<(Expr, ColumnDef), Error> {
         fn name_match(tgt: &str) -> impl Fn(&&(ColumnRef, ColumnDef)) -> bool + '_ {
             |(col, _)| {
                 matches!(col,
@@ -139,29 +152,30 @@ impl Columns {
                          if name.to_string().eq_ignore_ascii_case(tgt))
             }
         }
-        match field.split_once('.') {
-            None => self
-                .columns
-                .iter()
-                .find(name_match(field))
-                .map(|(r, d)| (Expr::col(r.clone()), d.clone())),
-            Some((col, key)) => self
-                .columns
-                .iter()
-                .filter(|(_, def)| {
-                    matches!(
-                        def.get_column_type(),
-                        ColumnType::Json | ColumnType::JsonBinary
-                    )
-                })
-                .find(name_match(col))
-                .map(|(r, d)| {
-                    (
-                        Expr::expr(Expr::col(r.clone()).cast_json_field(key)),
-                        d.clone(),
-                    )
-                }),
-        }
+        self.columns
+            .iter()
+            .find(name_match(field))
+            .map(|(r, d)| (Expr::col(r.clone()), d.clone()))
+            .or_else(|| {
+                self.columns
+                    .iter()
+                    .filter(|(_, def)| {
+                        matches!(
+                            def.get_column_type(),
+                            ColumnType::Json | ColumnType::JsonBinary
+                        )
+                    })
+                    .find(name_match(self.json_keys.get(field)?))
+                    .map(|(r, d)| {
+                        (
+                            Expr::expr(Expr::col(r.clone()).cast_json_field(field)),
+                            d.clone(),
+                        )
+                    })
+            })
+            .ok_or(Error::SearchSyntax(format!(
+                "Invalid field name: '{field}'"
+            )))
     }
 
     pub(crate) fn translate(&self, field: &str, op: &str, value: &str) -> Option<String> {
@@ -316,24 +330,34 @@ mod tests {
 
     #[test(tokio::test)]
     async fn json_queries() -> Result<(), anyhow::Error> {
-        let clause = advisory::Entity::find()
-            .select_only()
-            .column(advisory::Column::Id)
-            .filtering_with(
-                q("purl.name~log4j&purl.version>1.0&purl.ty=maven").sort("purl.name"),
-                advisory::Entity.columns().alias("advisory", "foo"),
-            )?
-            .build(sea_orm::DatabaseBackend::Postgres)
-            .to_string()
-            .split("WHERE ")
-            .last()
-            .unwrap()
-            .to_string();
+        fn clause(query: Query) -> Result<String, Error> {
+            Ok(advisory::Entity::find()
+                .filtering_with(
+                    query,
+                    advisory::Entity
+                        .columns()
+                        .json_keys("purl", &["name", "type", "version"]),
+                )?
+                .build(sea_orm::DatabaseBackend::Postgres)
+                .to_string()
+                .split("WHERE ")
+                .last()
+                .unwrap()
+                .to_string())
+        }
 
         assert_eq!(
-            clause,
-            r#"(("foo"."purl" ->> 'name') ILIKE '%log4j%') AND ("foo"."purl" ->> 'version') > '1.0' AND ("foo"."purl" ->> 'ty') = 'maven' ORDER BY "foo"."purl" ->> 'name' ASC"#
+            clause(q("name~log4j&version>1.0"))?,
+            r#"(("advisory"."purl" ->> 'name') ILIKE '%log4j%') AND ("advisory"."purl" ->> 'version') > '1.0'"#
         );
+        assert_eq!(
+            clause(q("name=log4j").sort("name"))?,
+            r#"("advisory"."purl" ->> 'name') = 'log4j' ORDER BY "advisory"."purl" ->> 'name' ASC"#
+        );
+        assert!(clause(q("missing=gone")).is_err());
+        assert!(clause(q("").sort("name")).is_ok());
+        assert!(clause(q("").sort("nope")).is_err());
+        assert!(clause(q("q=x")).is_err());
 
         Ok(())
     }
