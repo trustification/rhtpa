@@ -12,7 +12,8 @@ pub struct ProductStatus {
     pub version: Option<VersionInfo>,
     pub cpe: Option<trustify_common::cpe::Cpe>,
     pub status: &'static str,
-    pub packages: Vec<Purl>,
+    pub purls: Vec<Purl>,
+    pub packages: Vec<String>,
 }
 
 impl ProductStatus {
@@ -28,49 +29,26 @@ impl ProductStatus {
             BranchCategory::Vendor => {
                 self.vendor = Some(branch.name.clone());
             }
-            // Get component/package info
+            // Get package/purl info
             BranchCategory::ProductVersion => {
-                let purl = match branch.product.clone() {
+                match branch.product.clone() {
                     Some(full_name) => match full_name.product_identification_helper {
                         Some(id_helper) => match id_helper.purl {
-                            Some(purl) => Purl::from(purl),
-                            None => ProductStatus::generic_purl(&branch.name),
+                            Some(purl) => self.purls.push(purl.into()),
+                            None => self.packages.push(branch.name.clone()),
                         },
-                        None => ProductStatus::generic_purl(&full_name.product_id.0),
+                        None => self.packages.push(full_name.product_id.0),
                     },
-                    None => ProductStatus::generic_purl(&branch.name),
+                    None => self.packages.push(branch.name.clone()),
                 };
-                self.packages.push(purl);
             }
             // For everything else, for now see if we can get any purls
             _ => {
                 if let Some(purl) = branch_purl(branch) {
                     let purl = Purl::from(purl.clone());
-                    self.packages.push(purl);
+                    self.purls.push(purl);
                 }
             }
-        }
-    }
-
-    /// Parse purl from generic identifiers
-    fn generic_purl(name: &str) -> Purl {
-        // try to extract at least name and optionally namespace
-        // usually separate by /
-        // e.g. io.quarkus/quarkus-vertx-http
-        let parts = name.split('/').collect::<Vec<_>>();
-
-        let (namespace, name) = if parts.len() >= 2 {
-            (Some(parts[0]), parts[1])
-        } else {
-            (None, parts[0])
-        };
-
-        Purl {
-            ty: "generic".to_string(),
-            namespace: namespace.map(|s| s.to_string()),
-            name: name.to_string(),
-            version: None,
-            qualifiers: Default::default(),
         }
     }
 
@@ -88,13 +66,18 @@ impl ProductStatus {
                             // 2 is > 2.0.0
                             // 2.13 is > 2.13.0
                             match lenient_semver::parse(version.as_str()).map_err(|e| e.owned()) {
-                                Ok(semver) => VersionInfo {
-                                    spec: VersionSpec::Range(
-                                        Version::Inclusive(semver.to_string()),
-                                        Version::Unbounded,
-                                    ),
-                                    scheme: VersionScheme::Semver,
-                                },
+                                Ok(semver) => {
+                                    // let upper = semver.clone().set_major(semver.major + 1).build();
+                                    let mut upper = semver.clone();
+                                    upper.major += 1;
+                                    VersionInfo {
+                                        spec: VersionSpec::Range(
+                                            Version::Inclusive(semver.to_string()),
+                                            Version::Exclusive(upper.to_string()),
+                                        ),
+                                        scheme: VersionScheme::Semver,
+                                    }
+                                }
                                 Err(_) => VersionInfo {
                                     spec: VersionSpec::Exact(version),
                                     scheme: VersionScheme::Generic,
