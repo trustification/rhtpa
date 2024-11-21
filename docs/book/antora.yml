@@ -1,0 +1,7 @@
+name: trustify
+title: Trustify
+version: master # "master" is a special identifier for Antora
+start_page: ROOT:index.adoc
+nav:
+  - modules/ROOT/nav.adoc
+  - modules/admin/nav.adoc
