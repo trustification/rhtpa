@@ -1,5 +1,7 @@
 use crate::cvss3::severity::Severity;
 
+use super::Cvss3Base;
+
 /// CVSS V3.1 scores.
 ///
 /// Formula described in CVSS v3.1 Specification: Section 5:
@@ -35,16 +37,12 @@ impl Score {
 
     /// Convert the numeric score into a `Severity`
     pub fn severity(self) -> Severity {
-        if self.0 < 0.1 {
-            Severity::None
-        } else if self.0 < 4.0 {
-            Severity::Low
-        } else if self.0 < 7.0 {
-            Severity::Medium
-        } else if self.0 < 9.0 {
-            Severity::High
-        } else {
-            Severity::Critical
+        match self.0 {
+            x if x < 0.1 => Severity::None,
+            x if x < 4.0 => Severity::Low,
+            x if x < 7.0 => Severity::Medium,
+            x if x < 9.0 => Severity::High,
+            _ => Severity::Critical,
         }
     }
 }
@@ -64,5 +62,21 @@ impl From<Score> for f64 {
 impl From<Score> for Severity {
     fn from(score: Score) -> Severity {
         score.severity()
+    }
+}
+
+impl FromIterator<Cvss3Base> for Score {
+    fn from_iter<I: IntoIterator<Item = Cvss3Base>>(iter: I) -> Self {
+        let mut count: usize = 0;
+        let mut sum = 0.0;
+        for v in iter {
+            sum += v.score().value();
+            count += 1;
+        }
+        if count > 0 {
+            Self::new(sum / (count as f64))
+        } else {
+            Self::default()
+        }
     }
 }
