@@ -8,15 +8,15 @@ use crate::{
     Error,
 };
 use sea_orm::{
-    prelude::Uuid, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    prelude::Uuid, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
+    QueryOrder, QuerySelect,
 };
-use sea_query::{Condition, Expr, Order, SimpleExpr};
+use sea_query::Order;
 use tracing::instrument;
 use trustify_common::{
     db::{
         limiter::LimiterTrait,
-        query::{Filtering, Query},
+        query::{Filtering, IntoColumns, Query},
     },
     model::{Paginated, PaginatedResults},
     purl::{Purl, PurlErr},
@@ -309,29 +309,18 @@ impl PurlService {
         paginated: Paginated,
         connection: &C,
     ) -> Result<PaginatedResults<PurlSummary>, Error> {
-        // TODO: this would be the condition used to select from jsonb name key
-        let _unused_condition = Expr::cust_with_exprs(
-            "$1->>'name' ~~* $2",
-            [
-                qualified_purl::Column::Purl.into_simple_expr(),
-                SimpleExpr::Value(format!("%{}%", query.q).into()),
-            ],
-        );
-
-        // TODO: we need to figure out how we bring in querying keys of jsonb column in query.rs
         let limiter = qualified_purl::Entity::find()
-            .left_join(versioned_purl::Entity)
-            .filter(
-                Condition::any().add(
-                    versioned_purl::Column::BasePurlId.in_subquery(
-                        base_purl::Entity::find()
-                            .filtering(query)?
-                            .select_only()
-                            .column(base_purl::Column::Id)
-                            .into_query(),
-                    ),
-                ),
-            )
+            .filtering_with(
+                query,
+                qualified_purl::Entity
+                    .columns()
+                    .json_keys("purl", &["ty", "namespace", "name", "version"])
+                    .json_keys("qualifiers", &["arch", "distro", "repository_url"])
+                    .translator(|f, op, v| match f {
+                        "type" => Some(format!("ty{op}{v}")),
+                        _ => None,
+                    }),
+            )?
             .limiting(connection, paginated.offset, paginated.limit);
 
         let total = limiter.total().await?;

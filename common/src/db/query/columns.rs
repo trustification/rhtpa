@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
 use sea_orm::entity::ColumnDef;
@@ -13,7 +13,7 @@ use super::Error;
 pub struct Columns {
     columns: Vec<(ColumnRef, ColumnDef)>,
     translator: Option<Translator>,
-    json_keys: HashMap<&'static str, &'static str>,
+    json_keys: BTreeMap<&'static str, &'static str>,
 }
 
 impl Display for Columns {
@@ -77,7 +77,7 @@ impl Columns {
         Self {
             columns,
             translator: None,
-            json_keys: HashMap::new(),
+            json_keys: BTreeMap::new(),
         }
     }
 
@@ -137,8 +137,17 @@ impl Columns {
         self
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(ColumnRef, ColumnDef)> {
-        self.columns.iter()
+    /// Return the columns that are string-ish
+    pub(crate) fn strings(&self) -> impl Iterator<Item = Expr> + '_ {
+        self.columns
+            .iter()
+            .filter_map(|(col_ref, col_def)| match col_def.get_column_type() {
+                ColumnType::String(_) | ColumnType::Text => Some(Expr::col(col_ref.clone())),
+                _ => None,
+            })
+            .chain(self.json_keys.iter().map(|(field, column)| {
+                Expr::expr(Expr::col(column.into_identity()).cast_json_field(*field))
+            }))
     }
 
     /// Look up the column context for a given simple field name.
@@ -255,8 +264,8 @@ mod tests {
 
     #[test(tokio::test)]
     async fn translation() -> Result<(), anyhow::Error> {
-        let test = |query: Query, expected: &str| {
-            let stmt = advisory::Entity::find()
+        let clause = |query: Query| -> Result<String, Error> {
+            Ok(advisory::Entity::find()
                 .select_only()
                 .column(advisory::Column::Id)
                 .filtering_with(
@@ -272,6 +281,7 @@ mod tests {
                             ("severity", "<", "low") => Some("score<0"),
                             ("severity", "<", "medium") => Some("score<3"),
                             ("severity", "<", "high") => Some("score<6"),
+                            ("painful", "=", "true") => Some("severity>high"),
                             _ => None,
                         }
                         .map(String::from)
@@ -280,29 +290,29 @@ mod tests {
                             _ => None,
                         })
                     }),
-                )
-                .unwrap()
+                )?
                 .build(sea_orm::DatabaseBackend::Postgres)
                 .to_string()
                 .split("WHERE ")
                 .last()
                 .unwrap()
-                .to_string();
-            assert_eq!(stmt, expected);
+                .to_string())
         };
 
-        test(
-            q("severity>medium").sort("severity:desc"),
+        assert_eq!(
+            clause(q("severity>medium").sort("severity:desc"))?,
             r#""advisory"."score" > 6 ORDER BY "advisory"."score" DESC"#,
         );
-        test(
-            q("severity=medium"),
+        assert_eq!(
+            clause(q("severity=medium"))?,
             r#""advisory"."score" >= 3 AND "advisory"."score" < 6"#,
         );
-        test(
-            q("severity=low|high"),
+        assert_eq!(
+            clause(q("severity=low|high"))?,
             r#"("advisory"."score" >= 0 AND "advisory"."score" < 3) OR ("advisory"."score" >= 6 AND "advisory"."score" < 10)"#,
         );
+        assert_eq!(clause(q("painful=true"))?, r#""advisory"."score" > 10"#);
+        assert!(clause(q("painful=false")).is_err());
 
         Ok(())
     }
@@ -330,7 +340,7 @@ mod tests {
 
     #[test(tokio::test)]
     async fn json_queries() -> Result<(), anyhow::Error> {
-        fn clause(query: Query) -> Result<String, Error> {
+        let clause = |query: Query| -> Result<String, Error> {
             Ok(advisory::Entity::find()
                 .filtering_with(
                     query,
@@ -344,7 +354,7 @@ mod tests {
                 .last()
                 .unwrap()
                 .to_string())
-        }
+        };
 
         assert_eq!(
             clause(q("name~log4j&version>1.0"))?,
@@ -353,6 +363,10 @@ mod tests {
         assert_eq!(
             clause(q("name=log4j").sort("name"))?,
             r#"("advisory"."purl" ->> 'name') = 'log4j' ORDER BY "advisory"."purl" ->> 'name' ASC"#
+        );
+        assert_eq!(
+            clause(q("foo"))?,
+            r#"("advisory"."location" ILIKE '%foo%') OR ("advisory"."title" ILIKE '%foo%') OR (("purl" ->> 'name') ILIKE '%foo%') OR (("purl" ->> 'type') ILIKE '%foo%') OR (("purl" ->> 'version') ILIKE '%foo%')"#
         );
         assert!(clause(q("missing=gone")).is_err());
         assert!(clause(q("").sort("name")).is_ok());

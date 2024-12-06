@@ -30,7 +30,6 @@ impl TryFrom<(&str, Operator, &Vec<String>, &Columns)> for Filter {
     type Error = Error;
     fn try_from(tuple: (&str, Operator, &Vec<String>, &Columns)) -> Result<Self, Self::Error> {
         let (field, operator, values, columns) = tuple;
-        let (expr, col_def) = columns.for_field(field)?;
         Ok(Filter {
             operator: match operator {
                 Operator::NotLike | Operator::NotEqual => Operator::And,
@@ -39,19 +38,18 @@ impl TryFrom<(&str, Operator, &Vec<String>, &Columns)> for Filter {
             operands: Operand::Composite(
                 values
                     .iter()
-                    .map(|s| Arg::parse(s, col_def.get_column_type()).map(|v| (s, v)))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flat_map(
-                        |(s, v)| match columns.translate(field, &operator.to_string(), s) {
+                    .map(
+                        |s| match columns.translate(field, &operator.to_string(), s) {
                             Some(x) => q(&x).filter_for(columns),
-                            None => Ok(Filter {
-                                operands: Operand::Simple(expr.clone(), v),
-                                operator,
+                            None => columns.for_field(field).and_then(|(expr, col_def)| {
+                                Arg::parse(s, col_def.get_column_type()).map(|v| Filter {
+                                    operands: Operand::Simple(expr.clone(), v),
+                                    operator,
+                                })
                             }),
                         },
                     )
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
             ),
         })
     }
@@ -69,17 +67,9 @@ impl TryFrom<(&Vec<String>, &Columns)> for Filter {
                     .iter()
                     .flat_map(|s| {
                         // Create a LIKE filter for all the string-ish columns
-                        columns.iter().filter_map(move |(col_ref, col_def)| {
-                            match col_def.get_column_type() {
-                                ColumnType::String(_) | ColumnType::Text => Some(Filter {
-                                    operands: Operand::Simple(
-                                        Expr::col(col_ref.clone()),
-                                        Arg::Value(SeaValue::from(s)),
-                                    ),
-                                    operator: Operator::Like,
-                                }),
-                                _ => None,
-                            }
+                        columns.strings().map(move |expr| Filter {
+                            operands: Operand::Simple(expr, Arg::Value(SeaValue::from(s))),
+                            operator: Operator::Like,
                         })
                     })
                     .collect(),
