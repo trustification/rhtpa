@@ -141,7 +141,7 @@ impl<'d> CweCatalogLoader<'d> {
 
         Ok(IngestResult {
             id: Id::Sha512(digests.sha512.encode_hex()),
-            document_id: "CWE".to_string(),
+            document_id: Some("CWE".to_string()),
             warnings: vec![],
         })
     }
@@ -207,7 +207,7 @@ mod test {
         let graph = Graph::new(ctx.db.clone());
         let loader = CweCatalogLoader::new(&graph);
 
-        let zip = document_read("cwec_latest.xml.zip").await?;
+        let zip = document_read("cwec_latest.xml.zip")?;
 
         let mut archive = ZipArchive::new(zip)?;
 
