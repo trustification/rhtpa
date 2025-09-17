@@ -3061,22 +3061,6 @@ paths:
                 $ref: '#/components/schemas/VulnerabilityDetails'
         '404':
           description: The vulnerability could not be found
-    delete:
-      tags:
-      - vulnerability
-      summary: Delete vulnerability
-      operationId: deleteVulnerability
-      parameters:
-      - name: id
-        in: path
-        description: ID of the vulnerability
-        required: true
-        schema:
-          type: string
-      responses:
-        '501':
-          description: Method not yet implemented
-      deprecated: true
   /api/v2/weakness:
     get:
       tags:

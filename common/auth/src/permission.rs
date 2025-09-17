@@ -105,9 +105,6 @@ permission! {
 
         #[strum(serialize = "ai")]
         Ai,
-
-        #[strum(serialize = "delete.vulnerability")]
-        DeleteVulnerability,
     }
 }
 
