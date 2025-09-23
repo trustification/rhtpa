@@ -653,6 +653,17 @@ async fn qualified_packages_filter_by_license(ctx: &TrustifyContext) -> Result<(
 
     let results = service
         .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD|Apache License 2.0"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(4, results.items.len());
+
+    let results = service
+        .purls(
             q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&lib"),
             Paginated::default(),
             &ctx.db,
@@ -675,8 +686,6 @@ async fn qualified_packages_filter_by_license(ctx: &TrustifyContext) -> Result<(
     log::debug!("{results:#?}");
     assert_eq!(4, results.items.len());
 
-    ctx.ingest_document("cyclonedx/rh/latest_filters/container/quay_builder_qemu_rhcos_rhel8_2025-02-24/quay-builder-qemu-rhcos-rhel-8-amd64.json")
-        .await?;
     let results = service
         .purls(
             q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&lib&version=8.5.0-22.el8_10"),
