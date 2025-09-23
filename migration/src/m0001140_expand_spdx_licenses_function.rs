@@ -6,23 +6,13 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Indexes supporting the query on licensing_infos table added with the SQL script below
+        // Index supporting the query on licensing_infos table added with the SQL script below
         manager
             .create_index(
                 Index::create()
                     .table(LicensingInfos::Table)
                     .name(Indexes::SbomIdIdx.to_string())
                     .col(LicensingInfos::SbomId)
-                    .to_owned(),
-            )
-            .await?;
-        // Indexes supporting the sorting on licensing_infos table added with the SQL script below
-        manager
-            .create_index(
-                Index::create()
-                    .table(LicensingInfos::Table)
-                    .name(Indexes::LicenseIdIdx.to_string())
-                    .col(LicensingInfos::LicenseId)
                     .to_owned(),
             )
             .await?;
@@ -50,16 +40,6 @@ impl MigrationTrait for Migration {
                 Index::drop()
                     .if_exists()
                     .table(LicensingInfos::Table)
-                    .name(Indexes::LicenseIdIdx.to_string())
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .drop_index(
-                Index::drop()
-                    .if_exists()
-                    .table(LicensingInfos::Table)
                     .name(Indexes::SbomIdIdx.to_string())
                     .to_owned(),
             )
@@ -72,13 +52,11 @@ impl MigrationTrait for Migration {
 #[allow(clippy::enum_variant_names)]
 #[derive(DeriveIden)]
 pub enum Indexes {
-    LicenseIdIdx,
     SbomIdIdx,
 }
 
 #[derive(DeriveIden)]
 pub enum LicensingInfos {
     Table,
-    LicenseId,
     SbomId,
 }
