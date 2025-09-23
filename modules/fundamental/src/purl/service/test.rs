@@ -616,6 +616,88 @@ async fn qualified_packages(ctx: &TrustifyContext) -> Result<(), anyhow::Error> 
         .await?;
 
     log::debug!("{results:#?}");
+    assert_eq!(3, results.items.len());
+
+    Ok(())
+}
+
+#[test_context(TrustifyContext)]
+#[test(actix_web::test)]
+async fn qualified_packages_filter_by_license(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
+    let service = PurlService::new();
+
+    let _mtv = ctx.ingest_document("spdx/mtv-2.6.json").await?;
+
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    // MTV SBOM contains 2 packages with the specified license
+    assert_eq!(2, results.items.len());
+
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&libstdc++"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(1, results.items.len());
+
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&lib"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(2, results.items.len());
+
+    ctx.ingest_document("cyclonedx/rh/latest_filters/container/quay_builder_qemu_rhcos_rhel8_2025-02-24/quay-builder-qemu-rhcos-rhel-8-amd64.json")
+        .await?;
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&lib"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(4, results.items.len());
+
+    ctx.ingest_document("cyclonedx/rh/latest_filters/container/quay_builder_qemu_rhcos_rhel8_2025-02-24/quay-builder-qemu-rhcos-rhel-8-amd64.json")
+        .await?;
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD&lib&version=8.5.0-22.el8_10"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(2, results.items.len());
+
+    let results = service
+        .purls(
+            q("license=GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD"),
+            Paginated::default(),
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(0, results.items.len());
 
     Ok(())
 }

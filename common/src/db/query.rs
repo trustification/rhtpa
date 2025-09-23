@@ -6,6 +6,7 @@ mod value;
 
 pub use columns::{Columns, IntoColumns};
 pub use filtering::Filtering;
+use std::fmt;
 use value::Context;
 pub use value::{Valuable, Value, ValueContext};
 
@@ -132,6 +133,12 @@ impl Query {
             ),
         })
     }
+
+    pub fn get_constraint_for_field(&self, field: &str) -> Option<Constraint> {
+        self.parse()
+            .into_iter()
+            .find(|constraint| constraint.has_field(field))
+    }
 }
 
 /// A Query is comprised of full text searches and/or filters with optional sorting rules.
@@ -217,10 +224,23 @@ pub enum Error {
 }
 
 #[derive(Debug)]
-struct Constraint {
+pub struct Constraint {
     field: Option<String>, // None for full-text searches
     op: Option<Operator>,  // None for full-text searches
     value: Vec<String>,    // to account for '|'-delimited values
+}
+
+impl fmt::Display for Constraint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.field.as_deref().unwrap_or(""),
+            self.op
+                .map_or("".to_string(), |operator| operator.to_string()),
+            self.value.join("|")
+        )
+    }
 }
 
 impl Constraint {
@@ -234,6 +254,10 @@ impl Constraint {
             (None, _) => Filter::try_from((&self.value, columns)),
             _ => Err(Error::SearchSyntax(format!("Invalid query: '{self:?}'"))),
         }
+    }
+
+    fn has_field(&self, field: &str) -> bool {
+        self.field.as_ref().is_some_and(|f| f == field)
     }
 }
 

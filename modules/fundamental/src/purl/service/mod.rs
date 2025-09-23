@@ -8,11 +8,13 @@ use crate::{
     },
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    QuerySelect, prelude::Uuid,
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoIdentity, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select, prelude::Uuid,
 };
-use sea_query::Order;
+use sea_query::extension::postgres::PgExpr;
+use sea_query::{ColumnType, Expr, Func, JoinType, Order, SelectStatement, SimpleExpr, UnionType};
 use tracing::instrument;
+use trustify_common::db::query::{Columns, q};
 use trustify_common::{
     db::{
         limiter::LimiterTrait,
@@ -21,10 +23,11 @@ use trustify_common::{
     model::{Paginated, PaginatedResults},
     purl::{Purl, PurlErr},
 };
+use trustify_entity::sbom_package_purl_ref::Entity;
 use trustify_entity::{
-    base_purl,
+    base_purl, license,
     qualified_purl::{self, CanonicalPurl},
-    versioned_purl,
+    sbom_package, sbom_package_license, sbom_package_purl_ref, versioned_purl,
 };
 use trustify_module_ingestor::common::Deprecation;
 
@@ -294,20 +297,64 @@ impl PurlService {
         paginated: Paginated,
         connection: &C,
     ) -> Result<PaginatedResults<PurlSummary>, Error> {
-        let limiter = qualified_purl::Entity::find()
-            .filtering_with(
-                query,
-                qualified_purl::Entity
-                    .columns()
-                    .json_keys("purl", &["ty", "namespace", "name", "version"])
-                    .json_keys("qualifiers", &["arch", "distro", "repository_url"])
-                    .translator(|f, op, v| match f {
-                        "type" | "purl:type" => Some(format!("purl:ty{op}{v}")),
-                        "purl" => Purl::translate(op, v),
-                        _ => None,
-                    }),
-            )?
-            .limiting(connection, paginated.offset, paginated.limit);
+        let mut select = qualified_purl::Entity::find().filtering_with(
+            query.clone(),
+            qualified_purl::Entity
+                .columns()
+                .json_keys("purl", &["ty", "namespace", "name", "version"])
+                .json_keys("qualifiers", &["arch", "distro", "repository_url"])
+                .translator(|f, op, v| match f {
+                    "type" | "purl:type" => Some(format!("purl:ty{op}{v}")),
+                    "purl" => Purl::translate(op, v),
+                    // Add an empty condition (effectively TRUE) to the main SQL query
+                    // since the real filtering by license happens in the license subqueries below
+                    "license" => Some("".to_string()),
+                    _ => None,
+                }),
+        )?;
+
+        #[derive(FromQueryResult)]
+        struct QualifiedPurlId {
+            qualified_purl_id: Uuid,
+        }
+        // since different fields conditions in input query are AND'd when translating them
+        // into DB query, if the `license` field is in the input query then qualified_purl
+        // that will match the input query criteria must be among the one satisfying
+        // the license values requested in the input query itself.
+        if let Some(license_query) = query
+            .get_constraint_for_field("license")
+            .map(|constraint| q(&format!("{constraint}")))
+        {
+            let mut select_packages_from_spdx =
+                Self::build_spdx_license_query(license_query.clone())?;
+
+            let select_packages_from_cyclonedx =
+                Self::build_cyclonedx_license_query(license_query)?;
+
+            // Filters PURLs by license using a two-phase approach:
+            // 1. SPDX documents: Uses expand_license_expression() for LicenseRef resolution
+            // 2. CycloneDX documents: Direct text matching on license field
+            // The results are UNIONed and used to filter the main query.
+            let select_packages_filtering_by_license = select_packages_from_spdx
+                .union(UnionType::Distinct, select_packages_from_cyclonedx);
+
+            let purl_ids: Vec<Uuid> = sbom_package_purl_ref::Entity::find()
+                .from_raw_sql(
+                    connection
+                        .get_database_backend()
+                        .build(select_packages_filtering_by_license),
+                )
+                .into_model::<QualifiedPurlId>()
+                .all(connection)
+                .await?
+                .into_iter()
+                .map(|qualified_purl_id| qualified_purl_id.qualified_purl_id)
+                .collect();
+
+            select = select.filter(Expr::col(qualified_purl::Column::Id).is_in(purl_ids));
+        }
+
+        let limiter = select.limiting(connection, paginated.offset, paginated.limit);
 
         let total = limiter.total().await?;
 
@@ -315,6 +362,61 @@ impl PurlService {
             items: PurlSummary::from_entities(&limiter.fetch().await?),
             total,
         })
+    }
+
+    fn build_cyclonedx_license_query(license_query: Query) -> Result<SelectStatement, Error> {
+        Ok(Self::create_license_filtering_base_query()
+            .filtering_with(
+                license_query,
+                license::Entity
+                    .columns()
+                    .translator(|field, operator, value| match field {
+                        "license" => Some(format!("text{operator}{value}")),
+                        _ => None,
+                    }),
+            )?
+            .into_query())
+    }
+
+    fn build_spdx_license_query(license_query: Query) -> Result<SelectStatement, Error> {
+        Ok(Self::create_license_filtering_base_query()
+            .filtering_with(
+                license_query,
+                Columns::default()
+                    .add_expr(
+                        "expanded_license",
+                        SimpleExpr::FunctionCall(
+                            Func::cust("expand_license_expression".into_identity())
+                                .arg(Expr::col(license::Column::Text))
+                                .arg(Expr::col((
+                                    sbom_package_license::Entity,
+                                    sbom_package_license::Column::SbomId,
+                                ))),
+                        ),
+                        ColumnType::Text,
+                    )
+                    .translator(|field, operator, value| match field {
+                        "license" => Some(format!("expanded_license{operator}{value}")),
+                        _ => None,
+                    }),
+            )?
+            .filter(Expr::col(license::Column::Text).ilike("%LicenseRef-%"))
+            .into_query())
+    }
+
+    fn create_license_filtering_base_query() -> Select<Entity> {
+        sbom_package_purl_ref::Entity::find()
+            .select_only()
+            .column(sbom_package_purl_ref::Column::QualifiedPurlId)
+            .join(
+                JoinType::Join,
+                sbom_package_purl_ref::Relation::Package.def(),
+            )
+            .join(JoinType::Join, sbom_package::Relation::PackageLicense.def())
+            .join(
+                JoinType::Join,
+                sbom_package_license::Relation::License.def(),
+            )
     }
 
     #[instrument(skip(self, connection), err)]
