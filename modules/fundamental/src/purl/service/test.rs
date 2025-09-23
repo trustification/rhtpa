@@ -699,6 +699,30 @@ async fn qualified_packages_filter_by_license(ctx: &TrustifyContext) -> Result<(
     log::debug!("{results:#?}");
     assert_eq!(0, results.items.len());
 
+    // Negative test: empty license query
+    let empty_results = service
+        .purls(q("license="), Paginated::default(), &ctx.db)
+        .await?;
+    log::debug!("Empty license query results: {empty_results:#?}");
+    // Should return no items or handle gracefully
+    assert_eq!(0, empty_results.items.len());
+
+    // Negative test: malformed license query
+    let malformed_results = service
+        .purls(q("license=!!!not_a_license"), Paginated::default(), &ctx.db)
+        .await?;
+    log::debug!("Malformed license query results: {malformed_results:#?}");
+    // Should return no items or handle gracefully
+    assert_eq!(0, malformed_results.items.len());
+
+    // Negative test: invalid license query
+    let invalid_results = service
+        .purls(q("license=INVALID_LICENSE"), Paginated::default(), &ctx.db)
+        .await?;
+    log::debug!("Invalid license query results: {invalid_results:#?}");
+    // Should return no items or handle gracefully
+    assert_eq!(0, invalid_results.items.len());
+
     Ok(())
 }
 
