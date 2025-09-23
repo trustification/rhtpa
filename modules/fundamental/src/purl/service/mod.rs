@@ -11,19 +11,19 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoIdentity, QueryFilter,
     QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select, prelude::Uuid,
 };
-use sea_query::extension::postgres::PgExpr;
-use sea_query::{ColumnType, Expr, Func, JoinType, Order, SelectStatement, SimpleExpr, UnionType};
+use sea_query::{
+    ColumnType, Expr, Func, JoinType, Order, SelectStatement, SimpleExpr, UnionType,
+    extension::postgres::PgExpr,
+};
 use tracing::instrument;
-use trustify_common::db::query::{Columns, q};
 use trustify_common::{
     db::{
         limiter::LimiterTrait,
-        query::{Filtering, IntoColumns, Query},
+        query::{Columns, Filtering, IntoColumns, Query, q},
     },
     model::{Paginated, PaginatedResults},
     purl::{Purl, PurlErr},
 };
-use trustify_entity::sbom_package_purl_ref::Entity;
 use trustify_entity::{
     base_purl, license,
     qualified_purl::{self, CanonicalPurl},
@@ -404,7 +404,7 @@ impl PurlService {
             .into_query())
     }
 
-    fn create_license_filtering_base_query() -> Select<Entity> {
+    fn create_license_filtering_base_query() -> Select<sbom_package_purl_ref::Entity> {
         sbom_package_purl_ref::Entity::find()
             .select_only()
             .column(sbom_package_purl_ref::Column::QualifiedPurlId)
