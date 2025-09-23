@@ -12,7 +12,7 @@ use sea_orm::{
     QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select, prelude::Uuid,
 };
 use sea_query::{
-    ColumnType, Expr, Func, JoinType, Order, SelectStatement, SimpleExpr, UnionType,
+    ColumnType, Condition, Expr, Func, JoinType, Order, SelectStatement, SimpleExpr, UnionType,
     extension::postgres::PgExpr,
 };
 use tracing::instrument;
@@ -313,10 +313,6 @@ impl PurlService {
                 }),
         )?;
 
-        #[derive(FromQueryResult)]
-        struct QualifiedPurlId {
-            qualified_purl_id: Uuid,
-        }
         // since different fields conditions in input query are AND'd when translating them
         // into DB query, if the `license` field is in the input query then qualified_purl
         // that will match the input query criteria must be among the one satisfying
@@ -338,20 +334,12 @@ impl PurlService {
             let select_packages_filtering_by_license = select_packages_from_spdx
                 .union(UnionType::Distinct, select_packages_from_cyclonedx);
 
-            let purl_ids: Vec<Uuid> = sbom_package_purl_ref::Entity::find()
-                .from_raw_sql(
-                    connection
-                        .get_database_backend()
-                        .build(select_packages_filtering_by_license),
-                )
-                .into_model::<QualifiedPurlId>()
-                .all(connection)
-                .await?
-                .into_iter()
-                .map(|qualified_purl_id| qualified_purl_id.qualified_purl_id)
-                .collect();
-
-            select = select.filter(Expr::col(qualified_purl::Column::Id).is_in(purl_ids));
+            select = select.filter(
+                Condition::all().add(
+                    qualified_purl::Column::Id
+                        .in_subquery(select_packages_filtering_by_license.clone()),
+                ),
+            );
         }
 
         let limiter = select.limiting(connection, paginated.offset, paginated.limit);
