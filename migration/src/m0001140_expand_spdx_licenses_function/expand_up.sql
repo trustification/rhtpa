@@ -14,7 +14,7 @@ BEGIN
     LOOP
         -- Replace the license_id with the license name in the expression
         -- This handles exact matches and license references within expressions
-        result_text := regexp_replace(result_text, '\m' || license_mapping.license_id || '\M', license_mapping.name);
+        result_text := regexp_replace(result_text, '\m' || license_mapping.license_id || '\M', license_mapping.name, 'g');
 END LOOP;
 
 RETURN result_text;

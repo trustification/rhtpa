@@ -732,6 +732,22 @@ async fn qualified_packages_filter_by_license(ctx: &TrustifyContext) -> Result<(
     // Should return no items or handle gracefully
     assert_eq!(0, invalid_results.items.len());
 
+    // Pagination for just having the total count
+    let results = service
+        .purls(
+            q("license=GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD"),
+            Paginated {
+                offset: 0,
+                limit: 1,
+            },
+            &ctx.db,
+        )
+        .await?;
+
+    log::debug!("{results:#?}");
+    assert_eq!(1, results.items.len());
+    assert_eq!(4, results.total);
+
     Ok(())
 }
 

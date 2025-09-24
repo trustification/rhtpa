@@ -297,6 +297,7 @@ impl PurlService {
         paginated: Paginated,
         connection: &C,
     ) -> Result<PaginatedResults<PurlSummary>, Error> {
+        const LICENSE: &str = "license";
         let mut select = qualified_purl::Entity::find().filtering_with(
             query.clone(),
             qualified_purl::Entity
@@ -308,7 +309,7 @@ impl PurlService {
                     "purl" => Purl::translate(op, v),
                     // Add an empty condition (effectively TRUE) to the main SQL query
                     // since the real filtering by license happens in the license subqueries below
-                    "license" => Some("".to_string()),
+                    LICENSE => Some("".to_string()),
                     _ => None,
                 }),
         )?;
@@ -318,7 +319,7 @@ impl PurlService {
         // that will match the input query criteria must be among the one satisfying
         // the license values requested in the input query itself.
         if let Some(license_query) = query
-            .get_constraint_for_field("license")
+            .get_constraint_for_field(LICENSE)
             .map(|constraint| q(&format!("{constraint}")))
         {
             let mut select_packages_from_spdx =
