@@ -19,7 +19,7 @@ while DevOps manage its configuration, deployment, and backend integration.
 
 We are focusing on the signals: **traces** and **metrics**.
 
-## To enable traces, follow the instructions below
+## Enabling Traces
 
 * Clone Trustify
 * Open a terminal and run the command below to start OTEL Collector, Tempo, Prometheus, and Grafana:
@@ -36,9 +36,9 @@ RUST_LOG=info OTEL_TRACES_SAMPLER_ARG=1 cargo run --bin trustd api --devmode --d
 
 >[!NOTE]
 > You can select `traces` or `metrics` individually, or both, as shown in the command above.
-> For `metrics` only, the extra environment variables `RUST_LOG=info` and `OTEL_TRACES_SAMPLER_ARG=1` are not needed.
+> When using `metrics` only, the extra environment variables `RUST_LOG=info` and `OTEL_TRACES_SAMPLER_ARG=1` are not required.
 
-* For the importer use the command below to enable traces:
+* To enable traces for the importer, use the command below:
 
 ```shell
 RUST_LOG=info OTEL_TRACES_SAMPLER_ARG=1 cargo run --bin trustd importer --db-port 5432 --tracing enabled
@@ -54,7 +54,7 @@ To view Trustify's metrics in the Prometheus expression browser, use the followi
 
 ## Diagrams
 
-The diagrams below reflect the **current state** of both Trustify and [Trustify Helm Charts](https://github.com/trustification/trustify-helm-charts)
+The diagrams below reflect the **current state** of both Trustify and the [Trustify Helm Charts](https://github.com/trustification/trustify-helm-charts).
 
 ### Scenarios
 
