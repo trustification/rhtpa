@@ -41,11 +41,11 @@ pub fn issuer_url() -> String {
 /// Get the client IDs for `--devmode`.
 ///
 /// This combines the hardcoded [`CLIENT_IDS`] with any additional client IDs from the
-/// `TRUSTD_ADDITIONAL_CLIENTS` environment variable (comma-separated).
+/// `TRUSTD_DEVMODE_ADDITIONAL_CLIENTS` environment variable (comma-separated).
 pub fn client_ids() -> HashSet<String> {
     let mut clients: HashSet<String> = CLIENT_IDS.iter().map(|s| s.to_string()).collect();
 
-    if let Ok(additional_clients) = std::env::var("TRUSTD_ADDITIONAL_CLIENTS") {
+    if let Ok(additional_clients) = std::env::var("TRUSTD_DEVMODE_ADDITIONAL_CLIENTS") {
         clients.extend(
             additional_clients
                 .split(',')
