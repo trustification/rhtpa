@@ -344,6 +344,31 @@ async fn search_advisories(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
 
 #[test_context(TrustifyContext)]
 #[test(actix_web::test)]
+async fn rejected_cve(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
+    let query = async |expected_count, q| {
+        let app = caller(ctx).await.unwrap();
+        let uri = format!("/api/v2/advisory?q={}", urlencoding::encode(q));
+        let req = TestRequest::get().uri(&uri).to_request();
+        let response: Value = app.call_and_read_body_json(req).await;
+        tracing::debug!(test = "", "{response:#?}");
+        assert_eq!(expected_count, response["total"], "for {q}");
+    };
+
+    // ingest 2 CVE's, 1 rejected
+    ctx.ingest_documents(["cve/CVE-2024-25704.json", "cve/CVE-2024-29025.json"])
+        .await?;
+
+    query(2, "labels:type=cve").await;
+    query(1, "withdrawn=null&identifier=CVE-2024-29025").await;
+    query(1, "withdrawn!=null&identifier=CVE-2024-25704").await;
+    query(1, "withdrawn=2024-04-25T18:21:10.150Z").await;
+    query(1, "withdrawn<2025-01-01").await;
+
+    Ok(())
+}
+
+#[test_context(TrustifyContext)]
+#[test(actix_web::test)]
 async fn upload_default_csaf_format(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     let app = caller(ctx).await?;
 
