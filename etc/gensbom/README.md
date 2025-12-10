@@ -13,6 +13,14 @@
   `my.tpa.instance.abc:8765`
 * `TPA_AUTH_TOKEN`, holding the valid authorization token, e.g.
   `Bearer XXXXXXXXXX`
+* `gensbom` image
+  * you can either get it from the [GitHub Container Registry](https://github.com/guacsec/trustify/pkgs/container/gensbom):
+
+    ```
+    podman pull ghcr.io/guacsec/gensbom:latest
+    ```
+
+  * or build it [on its own](#building-the-container-image)
 
 **Running:**
 
