@@ -18,11 +18,11 @@ use trustify_test_context::{TrustifyContext, subset::ContainsSubset};
 )]
 #[case( // purl partial search
     Req { what: What::Q("pkg:oci/quay-builder-qemu-rhcos-rhel8"), ancestors: Some(10), ..Req::default() },
-    8
+    6
 )]
 #[case( // purl partial search latest
     Req { what: What::Q("pkg:oci/quay-builder-qemu-rhcos-rhel8"), ancestors: Some(10), latest: true, ..Req::default() },
-    2
+    1
 )]
 #[case( // purl partial search latest
     Req { what: What::Q("purl:name~quay-builder-qemu-rhcos-rhel8&purl:ty=oci"), ancestors: Some(10), latest: true, ..Req::default() },
@@ -159,11 +159,11 @@ async fn resolve_rh_variant_latest_filter_rpms_cdx(
 )]
 #[case( // purl partial search
     Req { what: What::Q("pkg:maven/io.vertx/vertx-core@"), ancestors: Some(10), ..Req::default() },
-    6
+    4
 )]
 #[case( // purl partial latest search
     Req { what: What::Q("pkg:maven/io.vertx/vertx-core@"), latest: true, ..Req::default() },
-    2
+    1
 )]
 #[case( // name exact search
     Req { what: What::Id("vertx-core"), ..Req::default() },
