@@ -1,0 +1,27 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: tests
+spec:
+  params:
+    - name: SNAPSHOT
+      type: string
+    - name: container-image
+      type: string
+      default: quay.io/redhat-user-workloads/trusted-content-tenant/rhtpa/rhtpa:tests
+  tasks:
+    - name: test
+      params:
+        - name: SNAPSHOT
+          value: "$(params.SNAPSHOT)"
+      taskSpec:
+        params:
+          - name: SNAPSHOT
+            type: string
+        steps:
+          - name: test-output
+            image: $(params.container-image)
+            script: |
+              #!/usr/bin/bash
+
+              ./test.sh
