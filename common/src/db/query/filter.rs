@@ -192,6 +192,10 @@ pub(crate) mod tests {
             Ok(_) => panic!("invalid field"),
             Err(e) => log::error!("{e}"),
         }
+        match where_clause("location>=\x00") {
+            Ok(_) => panic!("invalid operator"),
+            Err(e) => log::error!("{e}"),
+        }
         assert_eq!(
             where_clause("location=foo")?,
             r#""advisory"."location" = 'foo'"#
@@ -273,8 +277,16 @@ pub(crate) mod tests {
             r#""advisory"."published" IS NULL"#
         );
         assert_eq!(
+            where_clause("published=null")?,
+            r#""advisory"."published" = 'null'"#
+        );
+        assert_eq!(
             where_clause("published!=\x00")?,
             r#""advisory"."published" IS NOT NULL"#
+        );
+        assert_eq!(
+            where_clause("published!=null")?,
+            r#""advisory"."published" <> 'null'"#
         );
         assert_eq!(
             where_clause("severity=high")?,

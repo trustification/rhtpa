@@ -161,18 +161,30 @@ impl Columns {
         value: &str,
     ) -> Result<SimpleExpr, Error> {
         self.for_field(field).and_then(|(lhs, ct)| {
-            match (value.to_lowercase().as_str(), operator, &ct) {
-                ("\x00", Operator::Equal, _) => Ok(lhs.is_null()),
-                ("\x00", Operator::NotEqual, _) => Ok(lhs.is_not_null()),
-                (v, op, ColumnType::Array(_)) => match op {
-                    Operator::Like => Ok(array_to_string(lhs).ilike(like(v))),
-                    Operator::NotLike => Ok(array_to_string(lhs).not_ilike(like(v))),
-                    Operator::NotEqual => Ok(Expr::val(value).binary(op, all(lhs))),
-                    _ => Ok(Expr::val(value).binary(op, any(lhs))),
-                },
-                (v, Operator::Like, _) => Ok(lhs.ilike(like(v))),
-                (v, Operator::NotLike, _) => Ok(lhs.not_ilike(like(v))),
-                (_, _, ct) => parse(value, ct).map(|rhs| lhs.binary(operator, rhs)),
+            use Operator::*;
+            if value == "\x00" {
+                // Query for NULL values
+                match operator {
+                    Equal => Ok(lhs.is_null()),
+                    NotEqual => Ok(lhs.is_not_null()),
+                    op => Err(Error::SearchSyntax(format!(
+                        "'{op}' is invalid for NUL values; use '{Equal}' or '{NotEqual}'"
+                    ))),
+                }
+            } else if let ColumnType::Array(_) = ct {
+                // Special expressions for arrays
+                match operator {
+                    Like => Ok(array_to_string(lhs).ilike(like(value))),
+                    NotLike => Ok(array_to_string(lhs).not_ilike(like(value))),
+                    NotEqual => Ok(Expr::val(value).binary(operator, all(lhs))),
+                    _ => Ok(Expr::val(value).binary(operator, any(lhs))),
+                }
+            } else {
+                match (operator, &ct) {
+                    (Like, _) => Ok(lhs.ilike(like(value))),
+                    (NotLike, _) => Ok(lhs.not_ilike(like(value))),
+                    (_, ct) => parse(value, ct).map(|rhs| lhs.binary(operator, rhs)),
+                }
             }
         })
     }
@@ -607,6 +619,10 @@ mod tests {
         assert_eq!(
             clause(q("authors=\x00"))?,
             r#""advisory"."authors" IS NULL"#
+        );
+        assert_eq!(
+            clause(q("authors=null"))?,
+            r#"'null' = ANY("advisory"."authors")"#
         );
         assert_eq!(
             clause(q("authors~foo"))?,
