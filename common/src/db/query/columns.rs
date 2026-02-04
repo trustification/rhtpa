@@ -162,8 +162,8 @@ impl Columns {
     ) -> Result<SimpleExpr, Error> {
         self.for_field(field).and_then(|(lhs, ct)| {
             match (value.to_lowercase().as_str(), operator, &ct) {
-                ("null", Operator::Equal, _) => Ok(lhs.is_null()),
-                ("null", Operator::NotEqual, _) => Ok(lhs.is_not_null()),
+                ("\x00", Operator::Equal, _) => Ok(lhs.is_null()),
+                ("\x00", Operator::NotEqual, _) => Ok(lhs.is_not_null()),
                 (v, op, ColumnType::Array(_)) => match op {
                     Operator::Like => Ok(array_to_string(lhs).ilike(like(v))),
                     Operator::NotLike => Ok(array_to_string(lhs).not_ilike(like(v))),
@@ -605,7 +605,7 @@ mod tests {
         };
 
         assert_eq!(
-            clause(q("authors=null"))?,
+            clause(q("authors=\x00"))?,
             r#""advisory"."authors" IS NULL"#
         );
         assert_eq!(

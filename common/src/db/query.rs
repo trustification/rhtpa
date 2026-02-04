@@ -170,17 +170,17 @@ pub struct Query {
     /// attributes. If it doesn't, an error will be returned
     /// containing a list of the valid fields for that resource.
     ///
-    /// The value 'null' is treated specially for [Not]Equal filters:
-    /// it returns resources on which the field isn't set. Use the
-    /// LIKE operator, `~`, to match a literal "null" string. Omit the
-    /// value to match an empty string.
+    /// An ASCII value of `NUL`, percent-encoded as `%00`, may be used
+    /// to find resources on which a particular field isn't set. For
+    /// example, `name=%00` and `name!=%00` yield the WHERE clauses,
+    /// 'NAME IS NULL' and 'NAME IS NOT NULL', respectively.
     ///
     /// Examples:
     /// - `name=foo` - entity's _name_ matches 'foo' exactly
     /// - `name~foo` - entity's _name_ contains 'foo', case-insensitive
     /// - `name~foo|bar` - entity's _name_ contains either 'foo' OR 'bar', case-insensitive
     /// - `name=` - entity's _name_ is the empty string, ''
-    /// - `name=null` - entity's _name_ isn't set
+    /// - `name=%00` - entity's _name_ isn't set
     /// - `published>3 days ago` - date values can be "human time"
     ///
     /// Multiple full text searches and/or filters should be

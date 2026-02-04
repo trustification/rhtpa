@@ -269,11 +269,11 @@ pub(crate) mod tests {
             r#""advisory"."published" > '2023-11-03'"#
         );
         assert_eq!(
-            where_clause("published=null")?,
+            where_clause("published=\x00")?,
             r#""advisory"."published" IS NULL"#
         );
         assert_eq!(
-            where_clause("published!=NULL")?,
+            where_clause("published!=\x00")?,
             r#""advisory"."published" IS NOT NULL"#
         );
         assert_eq!(

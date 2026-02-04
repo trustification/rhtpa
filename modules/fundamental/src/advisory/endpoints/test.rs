@@ -342,8 +342,8 @@ async fn rejected_cve(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
         .await?;
 
     query(2, "labels:type=cve").await;
-    query(1, "withdrawn=null&identifier=CVE-2024-29025").await;
-    query(1, "withdrawn!=null&identifier=CVE-2024-25704").await;
+    query(1, "withdrawn=\x00&identifier=CVE-2024-29025").await;
+    query(1, "withdrawn!=\x00&identifier=CVE-2024-25704").await;
     query(1, "withdrawn=2024-04-25T18:21:10.150Z").await;
     query(1, "withdrawn<2025-01-01").await;
 

@@ -849,7 +849,7 @@ pub async fn list_groups_with_parent(
     let parent: Vec<_> = parent.into_iter().collect();
 
     let parent = match parent.is_empty() {
-        true => "null".to_string(),
+        true => "\x00".to_string(),
         false => locate_id(&ids, parent),
     };
 
