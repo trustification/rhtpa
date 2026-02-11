@@ -439,6 +439,7 @@ impl ComponentCreator {
                             node_id.clone(),
                             comp.name.to_string(),
                             comp.hashes.clone().into_iter().flatten(),
+                            comp.into(),
                         );
                     }
                     CryptographicAsset => {
