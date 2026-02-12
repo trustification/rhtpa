@@ -9,12 +9,14 @@ rust-version.workspace = true
 [dependencies]
 actix-web = { workspace = true }
 anyhow = { workspace = true }
+async-compression = { workspace = true, features = ["gzip", "lzma"] }
 bytes = { workspace = true }
 bytesize = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 cpe = { workspace = true }
 deepsize = { workspace = true }
+flate2 = { workspace = true }
 hex = { workspace = true }
 hide = { workspace = true }
 human-date-parser = { workspace = true }
@@ -23,6 +25,7 @@ isx = { workspace = true }
 itertools = { workspace = true }
 lenient_semver = { workspace = true }
 log = { workspace = true }
+lzma-rust2 = { workspace = true }
 native-tls = { workspace = true }
 packageurl = { workspace = true }
 pem = { workspace = true }

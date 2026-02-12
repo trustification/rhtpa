@@ -2,6 +2,7 @@ use anyhow::{Context, anyhow};
 use base16ct::HexDisplay;
 use futures::StreamExt;
 use git2::{BranchType, Repository};
+use indicatif::{ProgressBar, ProgressStyle};
 use sha2::Digest;
 use std::{env, fs::File, path::Path, path::PathBuf};
 use tokio::{
@@ -13,7 +14,7 @@ use tokio::{
 /// Manage the download of migration dumps
 #[derive(Debug)]
 pub struct Migration {
-    base: PathBuf,
+    dump: Dumps,
     branch: String,
 
     region: String,
@@ -23,18 +24,6 @@ pub struct Migration {
 impl Migration {
     /// Create a new instance, detecting paths and the branch
     pub fn new() -> anyhow::Result<Self> {
-        // base for storing dumps, does not include the branch name
-        let base = env::var_os("TRUSTIFY_MIGRATION_DUMPS")
-            .map(PathBuf::from)
-            .or_else(|| {
-                env::current_dir()
-                    .ok()
-                    .map(|path| path.join(".trustify").join("migration-dumps"))
-            })
-            .ok_or_else(|| anyhow!("unable to determine migration dumps directory"))?;
-
-        log::info!("Using migration base: '{}'", base.display());
-
         // get the base of the source code
 
         let cwd: PathBuf = match option_env!("CARGO_MANIFEST_DIR") {
@@ -59,7 +48,7 @@ impl Migration {
         // done
 
         Ok(Self {
-            base,
+            dump: Dumps::new()?,
             branch,
             region,
             bucket,
@@ -69,56 +58,22 @@ impl Migration {
     /// Provide the base dump path, for this branch.
     ///
     /// This may include downloading content from S3.
-    pub async fn provide(&self, id: &str) -> anyhow::Result<PathBuf> {
-        let base = self.base.join(&self.branch).join(id);
-
-        log::info!("branch base path: '{}'", base.display());
-
-        fs::create_dir_all(&base).await?;
-
-        // lock file, we can't lock directories cross-platform
-
-        let lock = task::spawn_blocking({
-            let base = base.clone();
-            move || {
-                let lock = File::create(base.join(".lock"))?;
-                // the existence of the lock file means nothing, only the lock on it
-                lock.lock()?;
-
-                Ok::<_, anyhow::Error>(lock)
-            }
-        })
-        .await??;
-
-        // holding the lock
-
-        let files = ["dump.sql.xz", "dump.tar"];
-
-        if files.iter().any(|file| !base.join(file).exists()) {
-            let client = reqwest::Client::new();
-            download_artifacts(
-                client,
-                &base,
-                &self.bucket,
-                &self.region,
-                &self.branch,
-                id,
-                files,
+    pub async fn provide(&self, commit: &str) -> anyhow::Result<PathBuf> {
+        self.dump
+            .provide_raw(
+                "migration",
+                Dump {
+                    url: &format!(
+                        "https://{bucket}.s3.{region}.amazonaws.com/{branch}/{commit}",
+                        bucket = self.bucket,
+                        region = self.region,
+                        branch = self.branch,
+                    ),
+                    files: &["dump.sql.xz", "dump.tar"],
+                    digests: true,
+                },
             )
-            .await?
-        } else {
-            log::debug!("dump files already exist");
-        }
-
-        //  validate checksums
-
-        validate_checksums(&base, files).await?;
-
-        // unlock
-
-        lock.unlock()?;
-
-        Ok(base)
+            .await
     }
 }
 
@@ -258,6 +213,7 @@ async fn validate_checksums(
 
     for file in files {
         let file = file.as_ref();
+        log::info!("validating checksum: {file}");
 
         // open content file
 
@@ -304,42 +260,169 @@ async fn validate_checksums(
 }
 
 /// just download artifacts (and their digest files) from the dump bucket
-async fn download_artifacts(
+async fn download_artifacts_raw(
     client: reqwest::Client,
     base: impl AsRef<Path>,
-    bucket: &str,
-    region: &str,
-    branch: &str,
-    commit: &str,
+    base_url: &str,
+    digests: bool,
     files: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> anyhow::Result<()> {
     let base = base.as_ref();
 
     for file in files.into_iter().flat_map(|file| {
         let file = file.as_ref();
-        vec![file.to_string(), format!("{file}.sha256")]
+        let mut files = vec![file.to_string()];
+        if digests {
+            files.push(format!("{file}.sha256"));
+        }
+        files
     }) {
-        let url = format!("https://{bucket}.s3.{region}.amazonaws.com/{branch}/{commit}/{file}",);
+        let url = format!("{base_url}/{file}");
 
         log::info!("downloading file: '{url}'");
 
-        let mut dest = fs::File::create(base.join(file)).await?;
-        let mut stream = client
-            .get(&url)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes_stream();
+        let response = client.get(&url).send().await?.error_for_status()?;
+
+        let total_size = response.content_length();
+        log::info!("total size: {total_size:?}");
+
+        let pb = if let Some(size) = total_size {
+            let pb = ProgressBar::new(size);
+            pb.set_style(
+                ProgressStyle::with_template(
+                    "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+                )?
+                .progress_chars("##-"),
+            );
+            pb
+        } else {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})",
+            )?);
+            pb
+        };
+
+        pb.set_message(file.clone());
+
+        let mut dest = fs::File::create(base.join(&file)).await?;
+        let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
+            pb.inc(chunk.len() as u64);
             io::copy(&mut chunk.as_ref(), &mut dest).await?;
         }
 
+        pb.finish_with_message(format!("{file} done"));
         dest.shutdown().await?;
     }
 
     Ok(())
+}
+
+pub struct Dump<'a, S: AsRef<str> + 'a> {
+    pub url: &'a str,
+    pub files: &'a [S],
+    pub digests: bool,
+}
+
+/// Manage raw dump downloads
+#[derive(Debug)]
+pub struct Dumps {
+    base: PathBuf,
+}
+
+impl Dumps {
+    pub fn new() -> anyhow::Result<Self> {
+        // base for storing dumps, does not include the branch name
+        let base = env::var_os("TRUSTIFY_MIGRATION_DUMPS")
+            .map(PathBuf::from)
+            .or_else(|| {
+                env::current_dir()
+                    .ok()
+                    .map(|path| path.join(".trustify").join("migration-dumps"))
+            })
+            .ok_or_else(|| anyhow!("unable to determine migration dumps directory"))?;
+
+        log::info!("Using migration base: '{}'", base.display());
+
+        Ok(Self { base })
+    }
+
+    /// Provide the base dump path, for this branch.
+    ///
+    /// This may include downloading content from S3.
+    pub async fn provide<'a, S>(&self, dump: Dump<'a, S>) -> anyhow::Result<PathBuf>
+    where
+        S: AsRef<str> + 'a,
+    {
+        self.provide_raw("url", dump).await
+    }
+
+    /// Provide the base dump path, for this branch.
+    ///
+    /// This may include downloading content from S3.
+    async fn provide_raw<'a, S>(
+        &self,
+        r#rtype: &str,
+        Dump {
+            url,
+            files,
+            digests,
+        }: Dump<'a, S>,
+    ) -> anyhow::Result<PathBuf>
+    where
+        S: AsRef<str> + 'a,
+    {
+        let dir = urlencoding::encode(url);
+        let files = files.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+
+        let base = self.base.join(r#rtype).join(&*dir);
+
+        log::debug!("base path: '{}'", base.display());
+
+        fs::create_dir_all(&base).await?;
+
+        // lock file, we can't lock directories cross-platform
+
+        let lock = task::spawn_blocking({
+            let base = base.clone();
+            move || {
+                let lock = File::create(base.join(".lock"))?;
+                log::debug!("Waiting for lock file");
+                // the existence of the lock file means nothing, only the lock on it
+                lock.lock()?;
+                log::debug!("Lock acquired");
+                Ok::<_, anyhow::Error>(lock)
+            }
+        })
+        .await??;
+
+        // holding the lock
+
+        if files.iter().any(|file| !base.join(file).exists()) {
+            let client = reqwest::Client::new();
+            download_artifacts_raw(client, &base, url, digests, &files).await?
+        } else {
+            log::debug!("dump files already exist");
+        }
+
+        //  validate checksums
+
+        if digests {
+            validate_checksums(&base, files).await?;
+        } else {
+            log::debug!("Skip checking digests");
+        }
+
+        // unlock
+
+        log::debug!("releasing lock");
+        lock.unlock()?;
+
+        Ok(base)
+    }
 }
 
 #[cfg(test)]

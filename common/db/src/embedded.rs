@@ -1,12 +1,8 @@
 use anyhow::Context;
 use postgresql_embedded::{PostgreSQL, Settings, VersionReq};
-use std::{
-    path::{Path, PathBuf},
-    pin::Pin,
-};
-use tokio::io::{AsyncRead, BufReader};
+use std::path::{Path, PathBuf};
 use tracing::{Instrument, info_span};
-use trustify_common::db::Database;
+use trustify_common::{db::Database, decompress::decompress_async_read};
 
 /// Create common default settings for the embedded database
 pub fn default_settings() -> anyhow::Result<Settings> {
@@ -92,17 +88,7 @@ pub async fn create_for(
         Source::Import(path) => {
             log::info!("Importing from: {}", path.display());
 
-            let source = tokio::fs::File::open(&path).await?;
-            let source = BufReader::new(source);
-
-            let source: Pin<Box<dyn AsyncRead + Send>> = match path
-                .extension()
-                .and_then(|ext| ext.to_str())
-            {
-                None | Some("sql") => Box::pin(source),
-                Some("xz") => Box::pin(async_compression::tokio::bufread::LzmaDecoder::new(source)),
-                Some(ext) => anyhow::bail!("Unsupported file type ({ext})"),
-            };
+            let source = decompress_async_read(path).await?;
 
             super::Database::import(&config, source)
                 .await

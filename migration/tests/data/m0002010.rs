@@ -4,7 +4,7 @@ use migration::data::{Database, Direction, MigrationWithData, Options, Runner};
 use sea_orm_migration::MigratorTrait;
 use test_context::test_context;
 use test_log::test;
-use trustify_test_context::{TrustifyMigrationContext, commit, ctx::DumpId};
+use trustify_test_context::{TrustifyMigrationContext, commit, dump};
 
 commit!(Commit("6d3ea814b4b44fe16ea8f21724dda5abb0fc7932"));
 
@@ -36,6 +36,27 @@ async fn examples(
         },
         async { MigratorTest::up(&ctx.db, None).await },
     )
+    .await?;
+
+    // done
+
+    Ok(())
+}
+
+// A dump created before merging the SBOM CVSS enhancements
+dump!(Ds4(
+    "https://trustify-dumps-ds4.s3.eu-west-1.amazonaws.com/20251104T095645Z",
+    storage = "dump.tar.gz",
+    no_digests,
+));
+
+/// Test the performance of applying the data migration of `m0002010`.
+#[test_context(TrustifyMigrationContext<Ds4>)]
+#[test(tokio::test)]
+async fn performance(ctx: &TrustifyMigrationContext<Ds4>) -> Result<(), anyhow::Error> {
+    MigrationWithData::run_with_test(ctx.storage.clone(), Options::default(), async {
+        MigratorTest::up(&ctx.db, None).await
+    })
     .await?;
 
     // done

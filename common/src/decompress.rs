@@ -1,7 +1,12 @@
 use actix_web::http::header;
 use anyhow::anyhow;
 use bytes::Bytes;
-use tokio::{runtime::Handle, task::JoinError};
+use std::{io::Read, path::Path, pin::Pin};
+use tokio::{
+    io::{AsyncRead, BufReader},
+    runtime::Handle,
+    task::JoinError,
+};
 use tracing::instrument;
 use walker_common::compression::{Compression, DecompressionOptions, Detector};
 
@@ -92,6 +97,36 @@ fn detect(content_type: Option<header::ContentType>, bytes: &[u8]) -> Result<Com
                 .detect(bytes)
                 .map_err(|err| Error::Detector(anyhow!("{err}")))?
         }
+    })
+}
+
+/// Take a file, return a wrapped [`AsyncRead`], and wrap that with the required compression decoder.
+pub async fn decompress_async_read(
+    path: impl AsRef<Path>,
+) -> anyhow::Result<Pin<Box<dyn AsyncRead + Send>>> {
+    let path = path.as_ref();
+    let source = tokio::fs::File::open(path).await?;
+    let source = BufReader::new(source);
+
+    Ok(match path.extension().and_then(|ext| ext.to_str()) {
+        None | Some("sql") => Box::pin(source),
+        Some("xz") => Box::pin(async_compression::tokio::bufread::LzmaDecoder::new(source)),
+        Some("gz") => Box::pin(async_compression::tokio::bufread::GzipDecoder::new(source)),
+        Some(ext) => anyhow::bail!("Unsupported file type ({ext})"),
+    })
+}
+
+/// Take a file, return a wrapped [`Read`], and wrap that with the required compression decoder.
+pub fn decompress_read(path: impl AsRef<Path>) -> anyhow::Result<Box<dyn Read + Send>> {
+    let path = path.as_ref();
+    let source = std::fs::File::open(path)?;
+    let source = std::io::BufReader::new(source);
+
+    Ok(match path.extension().and_then(|ext| ext.to_str()) {
+        None | Some("sql") => Box::new(source),
+        Some("xz") => Box::new(lzma_rust2::XzReader::new(source, false)),
+        Some("gz") => Box::new(flate2::read::GzDecoder::new(source)),
+        Some(ext) => anyhow::bail!("Unsupported file type ({ext})"),
     })
 }
 
