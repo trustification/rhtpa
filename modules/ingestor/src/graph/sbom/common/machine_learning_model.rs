@@ -7,7 +7,6 @@ use trustify_common::db::chunk::EntityChunkedIter;
 use trustify_entity::sbom_ai;
 use uuid::Uuid;
 
-#[derive(Default)]
 pub struct ModelCard {
     pub properties: Value,
 }
@@ -71,7 +70,6 @@ impl MachineLearningModelCreator {
                         .do_nothing()
                         .to_owned(),
                 )
-                .do_nothing()
                 .exec(db)
                 .await?;
         }

@@ -434,7 +434,6 @@ impl ComponentCreator {
                         );
                     }
                     MachineLearningModel => {
-                        // TODO: store the model card data
                         self.models.add(
                             node_id.clone(),
                             comp.name.to_string(),

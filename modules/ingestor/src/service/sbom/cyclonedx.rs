@@ -125,8 +125,10 @@ fn extract_labels(components: Option<&Vec<Component>>, labels_in: Labels) -> Lab
 mod test {
     use crate::service::{Cache, IngestorService};
     use crate::{graph::Graph, service::Format};
+    use sea_orm::EntityTrait;
     use test_context::test_context;
     use test_log::test;
+    use trustify_entity::sbom_ai;
     use trustify_test_context::{TrustifyContext, document_bytes};
 
     #[test_context(TrustifyContext)]
@@ -161,6 +163,8 @@ mod test {
 
         let ingestor = IngestorService::new(graph, ctx.storage.clone(), Default::default());
 
+        assert_eq!(0, sbom_ai::Entity::find().all(&ctx.db).await?.len());
+
         ingestor
             .ingest(
                 &data,
@@ -171,6 +175,22 @@ mod test {
             )
             .await
             .expect("must ingest");
+
+        assert_eq!(1, sbom_ai::Entity::find().all(&ctx.db).await?.len());
+
+        // ensure ingestion is idempotent
+        ingestor
+            .ingest(
+                &data,
+                Format::CycloneDX,
+                [("type", "cyclonedx"), ("kind", "aibom")],
+                None,
+                Cache::Skip,
+            )
+            .await
+            .expect("must ingest");
+
+        assert_eq!(1, sbom_ai::Entity::find().all(&ctx.db).await?.len());
 
         Ok(())
     }
