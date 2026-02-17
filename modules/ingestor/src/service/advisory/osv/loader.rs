@@ -297,6 +297,16 @@ impl<'g> OsvLoader<'g> {
                                     purl_status_creator.add(entry);
                                 }
                             }
+                            (RangeType::Ecosystem, Ecosystem::CratesIO) => {
+                                for entry in build_package_status(
+                                    &advisory_vuln,
+                                    &purl,
+                                    range,
+                                    VersionScheme::Cargo,
+                                ) {
+                                    purl_status_creator.add(entry);
+                                }
+                            }
                             (_, _) => {
                                 for entry in build_package_status_versions(
                                     &advisory_vuln,
@@ -577,7 +587,7 @@ mod test {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use test_context::test_context;
     use test_log::test;
-    use trustify_entity::advisory_vulnerability_score;
+    use trustify_entity::{advisory_vulnerability_score, purl_status, version_range, version_scheme};
     use trustify_test_context::{TrustifyContext, document};
 
     #[test_context(TrustifyContext)]
@@ -773,6 +783,68 @@ mod test {
         // The fix ensures that explicit versions are always processed for advisory linking.
         // If we reach this point, the OSV loader didn't fail, which means
         // our fix successfully handled explicit versions.
+
+        Ok(())
+    }
+
+    // Verify that crates.io advisories using ECOSYSTEM range type create
+    // purl_status entries with semver version ranges, not generic exact matches.
+    #[test_context(TrustifyContext)]
+    #[test(tokio::test)]
+    async fn loader_crates_io(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
+        let db = &ctx.db;
+        let graph = Graph::new(db.clone());
+
+        let (osv, digests): (Vulnerability, _) =
+            document("osv/GHSA-434x-w66g-qw3r.json").await?;
+
+        let loader = OsvLoader::new(&graph);
+        loader
+            .load(("file", "GHSA-434x-w66g-qw3r.json"), osv, &digests, None)
+            .await?;
+
+        let loaded_advisory = graph
+            .get_advisory_by_digest(&digests.sha256.encode_hex::<String>(), &ctx.db)
+            .await?;
+        assert!(loaded_advisory.is_some());
+
+        let loaded_advisory = loaded_advisory.unwrap();
+
+        let advisory_vuln = loaded_advisory
+            .get_vulnerability("CVE-2026-25541", &ctx.db)
+            .await?;
+        assert!(advisory_vuln.is_some());
+
+        // Query purl_status records for this advisory and verify version ranges
+        let statuses = purl_status::Entity::find()
+            .filter(purl_status::Column::AdvisoryId.eq(loaded_advisory.advisory.id))
+            .all(db)
+            .await?;
+
+        assert_eq!(2, statuses.len());
+
+        let mut ranges = Vec::new();
+        for status in &statuses {
+            let range = version_range::Entity::find_by_id(status.version_range_id)
+                .one(db)
+                .await?
+                .unwrap();
+
+            assert_eq!(
+                version_scheme::VersionScheme::Cargo,
+                range.version_scheme_id
+            );
+
+            ranges.push(range);
+        }
+
+        // Verify there is an affected range [1.2.1, 1.11.1)
+        assert!(ranges.iter().any(|r| {
+            r.low_version.as_deref() == Some("1.2.1")
+                && r.low_inclusive == Some(true)
+                && r.high_version.as_deref() == Some("1.11.1")
+                && r.high_inclusive == Some(false)
+        }));
 
         Ok(())
     }

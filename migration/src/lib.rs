@@ -46,6 +46,7 @@ mod m0002040_create_crypto;
 mod m0002050_add_sbom_revision;
 mod m0002060_add_sbom_group_field;
 mod m0002070_alter_sbom_group_restrict_parent;
+mod m0002080_add_cargo_version_scheme;
 
 pub trait MigratorExt: Send {
     fn build_migrations() -> Migrations;
@@ -108,6 +109,7 @@ impl MigratorExt for Migrator {
             .normal(m0002050_add_sbom_revision::Migration)
             .normal(m0002060_add_sbom_group_field::Migration)
             .normal(m0002070_alter_sbom_group_restrict_parent::Migration)
+            .normal(m0002080_add_cargo_version_scheme::Migration)
     }
 }
 

@@ -35,6 +35,7 @@ pub enum VersionScheme {
     Hex,
     Swift,
     Pub,
+    Cargo,
 }
 
 /// Translate from other ecosystems to our internal version scheme.
