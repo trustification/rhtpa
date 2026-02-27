@@ -4,7 +4,8 @@ use crate::{
     migration::{Dump, Dumps},
 };
 use anyhow::Context;
-use std::{borrow::Cow, marker::PhantomData, ops::Deref};
+use std::{borrow::Cow, fs::OpenOptions, io::Write, marker::PhantomData, ops::Deref, path::PathBuf};
+use walkdir::WalkDir;
 use tar::Archive;
 use test_context::AsyncTestContext;
 use trustify_common::decompress::decompress_read;
@@ -26,52 +27,76 @@ macro_rules! commit {
 
 #[macro_export]
 macro_rules! dump {
-    ($t:ident($url:literal $(, $($rest:tt)*)? )) => {
-        $crate::dump!(@parse $t, $url, db = "dump.sql.gz", storage = "dump.tar", digests = true, $($($rest)*)?);
-    };
-
-    (@parse $t:ident, $url:literal, db = $db:literal, storage = $storage:literal, digests = $digests:expr, db = $new_db:literal, $($rest:tt)*) => {
-        $crate::dump!(@parse $t, $url, db = $new_db, storage = $storage, digests = $digests, $($rest)*);
-    };
-    (@parse $t:ident, $url:literal, db = $db:literal, storage = $storage:literal, digests = $digests:expr, storage = $new_storage:literal, $($rest:tt)*) => {
-        $crate::dump!(@parse $t, $url, db = $db, storage = $new_storage, digests = $digests, $($rest)*);
-    };
-    (@parse $t:ident, $url:literal, db = $db:literal, storage = $storage:literal, digests = $digests:expr, no_digests, $($rest:tt)*) => {
-        $crate::dump!(@parse $t, $url, db = $db, storage = $storage, digests = false, $($rest)*);
-    };
-
-    (@parse $t:ident, $url:literal, db = $db:literal, storage = $storage:literal, digests = $digests:expr,) => {
-        $crate::dump!(@emit $t, $url, $db, $storage, $digests);
-    };
-
-    (@emit $t:ident, $url:literal, $db:literal, $storage:literal, $digests:expr) => {
+    ($t:ident($url:literal) $($chain:tt)*) => {
         pub struct $t;
 
         impl $crate::ctx::DumpId for $t {
             fn dump_id() -> $crate::ctx::Source {
-                $crate::ctx::Source::Dump {
-                    base_url: $url,
-                    db_file: $db,
-                    storage_file: $storage,
-                    digests: $digests,
-                }
+                $crate::ctx::Source::Dump(
+                    $crate::ctx::DumpSource::new($url) $($chain)*
+                )
             }
         }
     };
 }
 
+pub struct DumpSource {
+    pub base_url: &'static str,
+    pub db_file: &'static str,
+    pub storage_file: &'static str,
+    pub digests: bool,
+    pub strip: usize,
+    pub fix_zstd: bool,
+}
+
+impl DumpSource {
+    pub fn new(base_url: &'static str) -> Self {
+        Self {
+            base_url,
+            db_file: "dump.sql.gz",
+            storage_file: "dump.tar",
+            digests: true,
+            strip: 0,
+            fix_zstd: false,
+        }
+    }
+
+    pub fn db_file(mut self, v: &'static str) -> Self {
+        self.db_file = v;
+        self
+    }
+
+    pub fn storage_file(mut self, v: &'static str) -> Self {
+        self.storage_file = v;
+        self
+    }
+
+    pub fn digests(mut self, v: bool) -> Self {
+        self.digests = v;
+        self
+    }
+
+    pub fn no_digests(self) -> Self {
+        self.digests(false)
+    }
+
+    pub fn strip(mut self, v: usize) -> Self {
+        self.strip = v;
+        self
+    }
+
+    /// Appends the zstd EOF marker (`[0x01, 0x00, 0x00]`) to all `.zstd` files in the storage
+    /// directory after unpacking. Older dump generation did not properly close the zstd stream,
+    /// leaving the EOF marker unwritten.
+    pub fn fix_zstd(mut self) -> Self {
+        self.fix_zstd = true;
+        self
+    }
+}
+
 pub enum Source {
     Migration(Option<&'static str>),
-    Dump {
-        /// base URL to the dump files
-        base_url: &'static str,
-        /// DB file name
-        db_file: &'static str,
-        /// storage archive
-        storage_file: &'static str,
-        /// if there are digests for the files
-        digests: bool,
-    },
+    Dump(DumpSource),
 }
 
 pub trait DumpId {
@@ -100,7 +125,7 @@ impl<ID: DumpId> Deref for TrustifyMigrationContext<ID> {
 
 impl<ID: DumpId> TrustifyMigrationContext<ID> {
     pub async fn new() -> anyhow::Result<Self> {
-        let (base, db_file, storage_file) = match ID::dump_id() {
+        let (base, db_file, storage_file, strip, fix_zstd) = match ID::dump_id() {
             Source::Migration(migration) => {
                 let id: Cow<'static, str> = match migration {
                     Some(id) => format!("commit-{id}").into(),
@@ -108,15 +133,17 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                 };
                 let migration = Migration::new().context("failed to create migration manager")?;
                 let base = migration.provide(&id).await?;
-                (base, "dump.sql.xz", "dump.tar")
+                (base, "dump.sql.xz", "dump.tar", 0usize, false)
             }
 
-            Source::Dump {
+            Source::Dump(DumpSource {
                 base_url,
                 db_file,
                 storage_file,
                 digests,
-            } => {
+                strip,
+                fix_zstd,
+            }) => {
                 let base = Dumps::new()?
                     .provide(Dump {
                         url: base_url,
@@ -125,7 +152,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     })
                     .await?;
 
-                (base, db_file, storage_file)
+                (base, db_file, storage_file, strip, fix_zstd)
             }
         };
 
@@ -141,11 +168,51 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
         let source = decompress_read(storage_file).context("failed to open storage dump")?;
 
         let mut archive = Archive::new(source);
-        archive
-            .unpack(tmp.path())
-            .context("failed to unpack storage dump")?;
+        if strip == 0 {
+            archive
+                .unpack(tmp.path())
+                .context("failed to unpack storage dump")?;
+        } else {
+            for entry in archive
+                .entries()
+                .context("failed to read storage archive entries")?
+            {
+                let mut entry = entry.context("failed to read storage archive entry")?;
+                let path = entry
+                    .path()
+                    .context("failed to get entry path")?
+                    .into_owned();
+                let stripped: PathBuf = path.components().skip(strip).collect();
+                if stripped.as_os_str().is_empty() {
+                    continue;
+                }
+                // NOTE: `unpack` (vs `unpack_in`) has no path traversal protection, but
+                // this is test-only code and the archive content is generated by us and trusted.
+                entry
+                    .unpack(tmp.path().join(stripped))
+                    .context("failed to unpack storage archive entry")?;
+            }
+        }
 
         log::info!("Storage unpacked");
+
+        if fix_zstd {
+            const ZSTD_EOF_BYTES: [u8; 3] = [0x01, 0x00, 0x00];
+            for entry in WalkDir::new(tmp.path()) {
+                let entry = entry.context("failed to walk storage directory")?;
+                if entry.file_type().is_file()
+                    && entry.path().extension().and_then(|e| e.to_str()) == Some("zstd")
+                {
+                    let mut file = OpenOptions::new()
+                        .append(true)
+                        .open(entry.path())
+                        .with_context(|| format!("failed to open zstd file: {}", entry.path().display()))?;
+                    file.write_all(&ZSTD_EOF_BYTES)
+                        .with_context(|| format!("failed to append EOF bytes to: {}", entry.path().display()))?;
+                }
+            }
+            log::info!("Fixed zstd EOF bytes");
+        }
 
         // create DB
 

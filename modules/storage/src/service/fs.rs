@@ -111,9 +111,11 @@ impl FileSystemBackend {
         for compression in &self.read_compressions {
             target.set_extension(compression.extension());
             if try_exists(&target).await? {
+                log::debug!("Located: {}", target.display());
                 return Ok(Some((target, *compression)));
             }
         }
+        log::info!("Missing - base: {target:?}");
         Ok(None)
     }
 }

@@ -44,13 +44,18 @@ async fn examples(
 }
 
 // A dump created before merging the SBOM CVSS enhancements
-dump!(Ds4(
-    "https://trustify-dumps-ds4.s3.eu-west-1.amazonaws.com/20251104T095645Z",
-    storage = "dump.tar.gz",
-    no_digests,
-));
+dump!(
+    Ds4("https://trustify-dumps-ds4.s3.eu-west-1.amazonaws.com/20251104T095645Z")
+        .storage_file("dump.tar.gz")
+        .no_digests()
+        .strip(5)
+        .fix_zstd()
+);
 
 /// Test the performance of applying the data migration of `m0002010`.
+///
+/// **NOTE:** If this test runs out of disk space, you can set `TMPDIR` to a directory with more
+/// space.
 #[test_context(TrustifyMigrationContext<Ds4>)]
 #[test(tokio::test)]
 async fn performance(ctx: &TrustifyMigrationContext<Ds4>) -> Result<(), anyhow::Error> {
