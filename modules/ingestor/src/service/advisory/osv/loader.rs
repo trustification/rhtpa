@@ -587,7 +587,9 @@ mod test {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use test_context::test_context;
     use test_log::test;
-    use trustify_entity::{advisory_vulnerability_score, purl_status, version_range, version_scheme};
+    use trustify_entity::{
+        advisory_vulnerability_score, purl_status, version_range, version_scheme,
+    };
     use trustify_test_context::{TrustifyContext, document};
 
     #[test_context(TrustifyContext)]
@@ -795,12 +797,21 @@ mod test {
         let db = &ctx.db;
         let graph = Graph::new(db.clone());
 
-        let (osv, digests): (Vulnerability, _) =
-            document("osv/GHSA-434x-w66g-qw3r.json").await?;
+        let (osv, digests): (Vulnerability, _) = document("osv/GHSA-434x-w66g-qw3r.json").await?;
 
         let loader = OsvLoader::new(&graph);
-        loader
-            .load(("file", "GHSA-434x-w66g-qw3r.json"), osv, &digests, None)
+        ctx.db
+            .transaction(async |tx| {
+                loader
+                    .load(
+                        ("file", "GHSA-434x-w66g-qw3r.json"),
+                        osv,
+                        &digests,
+                        None,
+                        tx,
+                    )
+                    .await
+            })
             .await?;
 
         let loaded_advisory = graph
