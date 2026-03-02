@@ -109,10 +109,11 @@ pub async fn decompress_async_read(
     let source = BufReader::new(source);
 
     Ok(match path.extension().and_then(|ext| ext.to_str()) {
-        None | Some("sql") => Box::pin(source),
         Some("xz") => Box::pin(async_compression::tokio::bufread::LzmaDecoder::new(source)),
         Some("gz") => Box::pin(async_compression::tokio::bufread::GzipDecoder::new(source)),
-        Some(ext) => anyhow::bail!("Unsupported file type ({ext})"),
+        // Anything else could be .sql, .tar, or an unsupported compression format.
+        // In that case, the following code would fail to understand the compressed content.
+        None | Some(_) => Box::pin(source),
     })
 }
 
@@ -123,10 +124,11 @@ pub fn decompress_read(path: impl AsRef<Path>) -> anyhow::Result<Box<dyn Read + 
     let source = std::io::BufReader::new(source);
 
     Ok(match path.extension().and_then(|ext| ext.to_str()) {
-        None | Some("sql") => Box::new(source),
         Some("xz") => Box::new(lzma_rust2::XzReader::new(source, false)),
         Some("gz") => Box::new(flate2::read::GzDecoder::new(source)),
-        Some(ext) => anyhow::bail!("Unsupported file type ({ext})"),
+        // Anything else could be .sql, .tar, or an unsupported compression format.
+        // In that case, the following code would fail to understand the compressed content.
+        None | Some(_) => Box::new(source),
     })
 }
 
