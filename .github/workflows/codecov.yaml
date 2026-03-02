@@ -70,7 +70,7 @@ jobs:
 
       - name: Test
         # use only one job, trying to reduce memory usage
-        run: cargo llvm-cov --codecov --jobs 1 --features _test-s3 --output-path codecov.json
+        run: cargo llvm-cov --codecov --jobs 1 --all-features --output-path codecov.json
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" # for embedded postgresql
 
