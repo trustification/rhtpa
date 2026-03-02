@@ -72,8 +72,11 @@ async fn ingest_spdx_medium(ctx: &TrustifyContext) -> Result<(), anyhow::Error> 
 
 // ignore because it's a slow slow slow test.
 #[test_context(TrustifyContext)]
-#[ignore]
 #[test(tokio::test)]
+#[cfg_attr(
+    not(feature = "long_running"),
+    ignore = "enable with: cargo test --features long_running"
+)]
 async fn ingest_spdx_large(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     test_with_spdx(
         ctx,

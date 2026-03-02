@@ -10,6 +10,9 @@ rust-version.workspace = true
 name = "migration"
 path = "src/lib.rs"
 
+[features]
+long_running = [] # enable long-running tests
+
 [dependencies]
 trustify-common = { workspace = true }
 trustify-entity = { workspace = true }

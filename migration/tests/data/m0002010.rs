@@ -58,6 +58,10 @@ dump!(
 /// space.
 #[test_context(TrustifyMigrationContext<Ds4>)]
 #[test(tokio::test)]
+#[cfg_attr(
+    not(feature = "long_running"),
+    ignore = "enable with: cargo test --features long_running"
+)]
 async fn performance(ctx: &TrustifyMigrationContext<Ds4>) -> Result<(), anyhow::Error> {
     MigrationWithData::run_with_test(ctx.storage.clone(), Options::default(), async {
         MigratorTest::up(&ctx.db, None).await

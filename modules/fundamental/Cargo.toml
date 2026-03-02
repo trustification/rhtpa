@@ -6,6 +6,9 @@ publish.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+long_running = [] # enable long-running tests
+
 [dependencies]
 trustify-auth = { workspace = true }
 trustify-common = { workspace = true}
