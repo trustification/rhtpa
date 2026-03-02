@@ -4,13 +4,15 @@ use crate::{
     migration::{Dump, Dumps},
 };
 use anyhow::Context;
-use std::{borrow::Cow, fs::OpenOptions, io::Write, marker::PhantomData, ops::Deref, path::PathBuf};
-use walkdir::WalkDir;
+use std::{
+    borrow::Cow, fs::OpenOptions, io::Write, marker::PhantomData, ops::Deref, path::PathBuf,
+};
 use tar::Archive;
 use test_context::AsyncTestContext;
 use trustify_common::decompress::decompress_read;
 use trustify_db::embedded::{Options, default_settings};
 use trustify_module_storage::service::fs::FileSystemBackend;
+use walkdir::WalkDir;
 
 #[macro_export]
 macro_rules! commit {
@@ -206,9 +208,12 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     let mut file = OpenOptions::new()
                         .append(true)
                         .open(entry.path())
-                        .with_context(|| format!("failed to open zstd file: {}", entry.path().display()))?;
-                    file.write_all(&ZSTD_EOF_BYTES)
-                        .with_context(|| format!("failed to append EOF bytes to: {}", entry.path().display()))?;
+                        .with_context(|| {
+                            format!("failed to open zstd file: {}", entry.path().display())
+                        })?;
+                    file.write_all(&ZSTD_EOF_BYTES).with_context(|| {
+                        format!("failed to append EOF bytes to: {}", entry.path().display())
+                    })?;
                 }
             }
             log::info!("Fixed zstd EOF bytes");
