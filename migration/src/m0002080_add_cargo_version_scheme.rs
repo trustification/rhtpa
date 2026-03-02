@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
 CREATE OR REPLACE FUNCTION public.version_matches(version_p text, range_p public.version_range) RETURNS boolean
-    LANGUAGE plpgsql IMMUTABLE
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
     AS $$
 declare
 begin
@@ -101,7 +101,7 @@ DELETE FROM public.version_scheme WHERE id = 'cargo';
             .execute_unprepared(
                 r#"
 CREATE OR REPLACE FUNCTION public.version_matches(version_p text, range_p public.version_range) RETURNS boolean
-    LANGUAGE plpgsql IMMUTABLE
+    LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
     AS $$
 declare
 begin
