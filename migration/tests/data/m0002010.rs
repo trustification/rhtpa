@@ -1,7 +1,10 @@
 use crate::MigratorTest;
-use migration::Migrator;
-use migration::data::{Database, Direction, MigrationWithData, Options, Runner};
+use migration::{
+    Migrator,
+    data::{Database, Direction, MigrationWithData, Options, Runner},
+};
 use sea_orm_migration::MigratorTrait;
+use std::num::NonZeroUsize;
 use test_context::test_context;
 use test_log::test;
 use trustify_test_context::{TrustifyMigrationContext, commit, dump};
@@ -63,9 +66,14 @@ dump!(
     ignore = "enable with: cargo test --features long_running"
 )]
 async fn performance(ctx: &TrustifyMigrationContext<Ds4>) -> Result<(), anyhow::Error> {
-    MigrationWithData::run_with_test(ctx.storage.clone(), Options::default(), async {
-        MigratorTest::up(&ctx.db, None).await
-    })
+    MigrationWithData::run_with_test(
+        ctx.storage.clone(),
+        Options {
+            concurrent: NonZeroUsize::new(32).unwrap(),
+            ..Options::default()
+        },
+        async { MigratorTest::up(&ctx.db, None).await },
+    )
     .await?;
 
     // done
