@@ -159,7 +159,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
         };
 
         let storage_file = base.join(storage_file);
-        log::info!("Importing dump: {}", storage_file.display());
+        log::info!("Importing storage dump: {}", storage_file.display());
 
         // create storage
 
@@ -216,6 +216,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     })?;
                 }
             }
+
             log::info!("Fixed zstd EOF bytes");
         }
 

@@ -86,7 +86,7 @@ pub async fn create_for(
             .await
             .context("Bootstrapping the test database")?,
         Source::Import(path) => {
-            log::info!("Importing from: {}", path.display());
+            log::info!("Importing database from: {}", path.display());
 
             let source = decompress_async_read(path).await?;
 

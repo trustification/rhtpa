@@ -187,7 +187,7 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
         let pb = Arc::new(ProgressBar::new(count as u64));
         pb.set_style(
             ProgressStyle::with_template(
-                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({per_sec}) ({eta})",
             )
             .map_err(|err| DbErr::Migration(err.to_string()))?
             .progress_chars("##-"),
