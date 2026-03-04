@@ -161,6 +161,7 @@ utoipa-swagger-ui = "9.0.0"
 uuid = "1.7.0"
 walkdir = "2.5"
 walker-common = "0.15.0"
+which = "8"
 wiremock = "0.6"
 zip = "8"
 

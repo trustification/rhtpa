@@ -88,10 +88,14 @@ impl FileSystemBackend {
     /// Create a new storage for testing
     pub async fn for_test() -> anyhow::Result<(Self, TempDir)> {
         let dir = tempdir()?;
-
-        Self::new(dir.path(), Compression::None)
+        Self::for_test_in(dir.path())
             .await
             .map(|result| (result, dir))
+    }
+
+    /// Create a new storage for testing, with an existing directory
+    pub async fn for_test_in(dir: impl Into<PathBuf>) -> anyhow::Result<Self> {
+        Self::new(dir, Compression::None).await
     }
 
     /// Create a new storage for testing

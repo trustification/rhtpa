@@ -44,7 +44,12 @@ tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 utoipa-actix-web = { workspace = true }
 walkdir = { workspace = true }
+which = { workspace = true }
 zip = { workspace = true }
+uuid = { version = "1.21.0", features = ["v4"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.31.2", features = ["fs"] }
 
 [dev-dependencies]
 hex = { workspace = true }

@@ -8,18 +8,19 @@ pub mod ctx;
 pub mod flame;
 pub mod migration;
 pub mod q;
+mod resource;
 pub mod spdx;
 pub mod subset;
 
 pub use ctx::{ReadOnly, TrustifyContext, TrustifyMigrationContext};
 
+use crate::resource::ResourceStack;
 use ::migration::{
     ConnectionTrait, DbErr,
     sea_orm::{RuntimeErr, Statement, prelude::Uuid, sqlx},
 };
 use futures::Stream;
 use peak_alloc::PeakAlloc;
-use postgresql_embedded::PostgreSQL;
 use serde::Serialize;
 use std::{
     env,
@@ -28,7 +29,6 @@ use std::{
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
 };
-use tempfile::TempDir;
 use tokio_util::{bytes::Bytes, io::ReaderStream};
 use trustify_common::{db::Database, decompress::decompress_async, hashing::Digests};
 use trustify_entity::labels::Labels;
@@ -60,24 +60,24 @@ impl AsRef<Path> for Dataset {
 #[allow(dead_code)]
 pub struct TrustifyTestContext {
     pub db: Database,
+    /// The PostgreSQL database port
+    pub port: u16,
     pub graph: Graph,
     pub storage: FileSystemBackend,
     pub ingestor: IngestorService,
     pub mem_limit_mb: f32,
-    pub postgresql: Option<PostgreSQL>,
-    /// Temp directory resource, will be deleted when dropped
-    _tmp: TempDir,
+    resources: ResourceStack,
 }
 
 #[global_allocator]
 static PEAK_ALLOC: PeakAlloc = PeakAlloc;
 
 impl TrustifyTestContext {
-    async fn new(
+    fn new(
         db: Database,
+        port: u16,
         storage: FileSystemBackend,
-        tmp: TempDir,
-        postgresql: impl Into<Option<PostgreSQL>>,
+        resources: impl Into<ResourceStack>,
     ) -> Self {
         let graph = Graph::new(db.clone());
         let ingestor = IngestorService::new(graph.clone(), storage.clone(), Default::default());
@@ -88,12 +88,12 @@ impl TrustifyTestContext {
 
         Self {
             db,
+            port,
             graph,
             storage,
             ingestor,
             mem_limit_mb,
-            postgresql: postgresql.into(),
-            _tmp: tmp,
+            resources: resources.into(),
         }
     }
 
@@ -332,7 +332,9 @@ $$;
         Ok(())
     }
 
-    pub(crate) fn teardown(&self) {
+    pub(crate) async fn teardown(self) {
+        self.resources.drop().await;
+
         let peak_mem = PEAK_ALLOC.peak_usage_as_mb();
         let args: Vec<String> = env::args().collect();
         // Prints the error message when running the tests with threads=1

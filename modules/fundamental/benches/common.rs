@@ -12,7 +12,7 @@ use csaf::product_tree::ProductTree;
 use csaf::vulnerability::Vulnerability;
 use packageurl::PackageUrl;
 use std::io::Error;
-use std::sync::Arc;
+use std::rc::Rc;
 use uuid::Uuid;
 
 use std::str::FromStr;
@@ -20,13 +20,13 @@ use std::str::FromStr;
 use csaf::definitions::{BranchesT, ProductIdentificationHelper};
 use sea_orm::ConnectionTrait;
 
-pub fn setup_runtime_and_ctx() -> (Runtime, Arc<TrustifyContext>) {
+pub fn setup_runtime_and_ctx() -> (Runtime, Rc<TrustifyContext>) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     let ctx = runtime.block_on(async { TrustifyContext::setup().await });
-    (runtime, Arc::new(ctx))
+    (runtime, Rc::new(ctx))
 }
 
 pub async fn document_generated_from(path: &str, rev: u64) -> Result<Bytes, Error> {
@@ -107,7 +107,7 @@ pub async fn document_generated_from(path: &str, rev: u64) -> Result<Bytes, Erro
     Ok(Bytes::from(data))
 }
 
-pub async fn reset_db(ctx: &Arc<TrustifyContext>) {
+pub async fn reset_db(ctx: &Rc<TrustifyContext>) {
     // reset DB tables to a clean state...
     for table in [
         "advisory",

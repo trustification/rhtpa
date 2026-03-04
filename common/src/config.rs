@@ -151,6 +151,17 @@ impl Database {
             sslmode = &self.sslmode,
         )
     }
+
+    pub fn from_port(port: u16) -> anyhow::Result<Self> {
+        Ok(Self {
+            username: "postgres".into(),
+            password: "trustify".into(),
+            host: "localhost".into(),
+            name: "test".into(),
+            port,
+            ..Self::from_env()?
+        })
+    }
 }
 
 #[cfg(test)]

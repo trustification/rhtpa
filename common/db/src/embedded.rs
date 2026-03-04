@@ -72,14 +72,7 @@ pub async fn create_for(
     .instrument(info_span!("start database"))
     .await?;
 
-    let config = crate::config::Database {
-        username: "postgres".into(),
-        password: "trustify".into(),
-        host: "localhost".into(),
-        name: "test".into(),
-        port: postgresql.settings().port,
-        ..crate::config::Database::from_env()?
-    };
+    let config = crate::config::Database::from_port(postgresql.settings().port)?;
 
     let db = match options.source {
         Source::Bootstrap => super::Database::bootstrap(&config)

@@ -1,0 +1,206 @@
+#[cfg(target_os = "linux")]
+pub mod btrfs;
+
+use crate::{TrustifyTestContext, resource::TestResourceExt, resource::defer};
+use anyhow::Context;
+use postgresql_embedded::{PostgreSQL, Settings};
+use std::{
+    fs::OpenOptions,
+    io::Write,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use tar::Archive;
+use trustify_common::{db::Database, decompress::decompress_read};
+use trustify_db::embedded::{Options, default_settings};
+use trustify_module_storage::service::fs::FileSystemBackend;
+use walkdir::WalkDir;
+
+pub struct Snapshot {
+    pub id: String,
+    pub base: PathBuf,
+    pub db_file: String,
+    pub storage_file: String,
+    pub strip: usize,
+    pub fix_zstd: bool,
+}
+
+impl Snapshot {
+    #[cfg(not(target_os = "linux"))]
+    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
+        let tmp = tempfile::TempDir::new()?;
+        let (db, storage, psql) = self.setup(&tmp).await?;
+
+        Ok(TrustifyTestContext::new(
+            db,
+            storage,
+            defer(psql).then(defer(tmp)),
+        ))
+    }
+
+    /// Ensure that a snapshot, with data, is available
+    ///
+    /// Either by running with a fresh import in a temporary directory. Or, if available, with
+    /// a BTRFS snapshot of an import. If such a snapshot doesn't exist yet, it will be created
+    /// first.
+    #[cfg(target_os = "linux")]
+    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
+        let running = btrfs::Running::new(&self.id).await?;
+
+        log::info!("Snapshot state: {running:?}");
+
+        Ok(match running {
+            // we are running with a normal, temporary directory
+            btrfs::Running::Temporary(tmp) => {
+                // set up the content in the target directory
+                let (db, storage, psql) = self.setup(&tmp).await?;
+
+                TrustifyTestContext::new(
+                    db,
+                    psql.settings().port,
+                    storage,
+                    defer(psql).then(defer(tmp)),
+                )
+            }
+            // We are running with an existing snapshot, just enable it
+            btrfs::Running::Existing(snapshot) => {
+                // activate the snapshot, starts the database
+                let started = snapshot.start().await?;
+
+                TrustifyTestContext::new(
+                    started.db().clone(),
+                    started.settings().port,
+                    started.storage().clone(),
+                    started,
+                )
+            }
+            // We need to create the snapshot first, then run it
+            btrfs::Running::Collecting(collect) => {
+                // set up the content in preparation directory
+                let (_, _, psql) = self.setup(&collect).await?;
+
+                // create the snapshot
+                let snapshot = collect.create(psql).await?;
+                // and activate it
+                let started = snapshot.start().await?;
+
+                TrustifyTestContext::new(
+                    started.db().clone(),
+                    started.settings().port,
+                    started.storage().clone(),
+                    started,
+                )
+            }
+        })
+    }
+
+    /// This performs the actual DB and storage preparation
+    async fn setup(
+        self,
+        tmp: impl AsRef<Path>,
+    ) -> anyhow::Result<(Database, FileSystemBackend, PostgreSQL)> {
+        let tmp = tmp.as_ref();
+        log::info!("Setting up context in: {}", tmp.display());
+
+        // create content
+
+        let Self {
+            id: _,
+            base,
+            db_file,
+            storage_file,
+            strip,
+            fix_zstd,
+        } = self;
+
+        let storage_file = base.join(storage_file);
+        log::info!("Importing storage dump: {}", storage_file.display());
+
+        // create storage
+
+        let tmp_storage = tmp.join("storage");
+        let storage = FileSystemBackend::for_test_in(&tmp_storage)
+            .await
+            .expect("Unable to create storage backend");
+
+        let source = decompress_read(storage_file).context("failed to open storage dump")?;
+
+        let mut archive = Archive::new(source);
+        if strip == 0 {
+            archive
+                .unpack(&tmp_storage)
+                .context("failed to unpack storage dump")?;
+        } else {
+            for entry in archive
+                .entries()
+                .context("failed to read storage archive entries")?
+            {
+                let mut entry = entry.context("failed to read storage archive entry")?;
+                let path = entry
+                    .path()
+                    .context("failed to get entry path")?
+                    .into_owned();
+                let stripped: PathBuf = path.components().skip(strip).collect();
+                if stripped.as_os_str().is_empty() {
+                    continue;
+                }
+                // NOTE: `unpack` (vs `unpack_in`) has no path traversal protection, but
+                // this is test-only code and the archive content is generated by us and trusted.
+                entry
+                    .unpack(tmp_storage.join(stripped))
+                    .context("failed to unpack storage archive entry")?;
+            }
+        }
+
+        log::info!("Storage unpacked");
+
+        if fix_zstd {
+            log::info!("Fixing zstd EOF markers");
+
+            const ZSTD_EOF_BYTES: [u8; 3] = [0x01, 0x00, 0x00];
+            for entry in WalkDir::new(tmp_storage) {
+                let entry = entry.context("failed to walk storage directory")?;
+                if entry.file_type().is_file()
+                    && entry.path().extension().and_then(|e| e.to_str()) == Some("zstd")
+                {
+                    let mut file = OpenOptions::new()
+                        .append(true)
+                        .open(entry.path())
+                        .with_context(|| {
+                            format!("failed to open zstd file: {}", entry.path().display())
+                        })?;
+                    file.write_all(&ZSTD_EOF_BYTES).with_context(|| {
+                        format!("failed to append EOF bytes to: {}", entry.path().display())
+                    })?;
+                }
+            }
+
+            log::info!("Fixed zstd EOF bytes");
+        }
+
+        // create DB
+
+        let db_tmp = tmp.join("db");
+        log::info!("Creating DB instance: {}", db_tmp.display());
+
+        let settings = Settings {
+            data_dir: db_tmp.join("data"),
+            installation_dir: db_tmp.join("instance"),
+            timeout: Some(Duration::from_secs(30)),
+            ..default_settings().context("unable to create default settings")?
+        };
+
+        let (db, postgresql) = trustify_db::embedded::create_for(
+            settings,
+            Options {
+                source: trustify_db::embedded::Source::Import(base.join(db_file)),
+            },
+        )
+        .await
+        .context("failed to create an embedded database")?;
+
+        log::info!("Database imported");
+
+        Ok((db, storage, postgresql))
+    }
+}

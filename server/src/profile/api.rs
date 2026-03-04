@@ -456,7 +456,7 @@ mod test {
                 "--db-name",
                 "test",
                 "--db-port",
-                &ctx.postgresql.as_ref().expect("database").settings().port.to_string(),
+                &ctx.port.to_string(),
             ],
         ))?;
         InitData::new(context, run).await.map(|_| ())
