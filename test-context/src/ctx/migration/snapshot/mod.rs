@@ -17,6 +17,7 @@ use trustify_module_storage::service::fs::FileSystemBackend;
 use walkdir::WalkDir;
 
 pub struct Snapshot {
+    #[allow(unused)]
     pub id: String,
     pub base: PathBuf,
     pub db_file: String,
