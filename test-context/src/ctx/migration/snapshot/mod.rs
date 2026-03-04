@@ -33,6 +33,7 @@ impl Snapshot {
 
         Ok(TrustifyTestContext::new(
             db,
+            psql.settings().port,
             storage,
             defer(psql).then(defer(tmp)),
         ))

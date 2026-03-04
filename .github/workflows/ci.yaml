@@ -18,7 +18,50 @@ env:
 
 jobs:
 
+  check:
+    name: Check
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2025
+          - ubuntu-24.04
+          - macos-15
+        include:
+          - os: windows-2025
+            install: |
+              git config --system core.longpaths true
+              echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+              vcpkg install openssl:x64-windows-static-md
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache Theseus Postgresql Installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.theseus/postgresql
+          key: ${{ runner.os }}-theseus-postgresql-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install dependencies
+        if: matrix.install != ''
+        run: ${{ matrix.install }}
+
+      - name: Check
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" # for embedded postgresql
+        run: cargo check
+      - name: Clippy
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" # for embedded postgresql
+        run: cargo clippy --all-targets --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
+
   ci:
+    needs:
+      - check
     runs-on: ubuntu-24.04
 
     steps:
@@ -61,16 +104,6 @@ jobs:
 
       - name: Format
         run: cargo fmt --check
-
-      - name: Check
-        env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" # for embedded postgresql
-        run: cargo check
-
-      - name: Clippy
-        env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" # for embedded postgresql
-        run: cargo clippy --all-targets --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
       - name: Start minio
         run: |
