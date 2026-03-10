@@ -1,6 +1,8 @@
 #[cfg(target_os = "linux")]
 pub mod btrfs;
 
+use crate::ctx::migration::snapshot::btrfs::SnapshotProvider;
+use crate::migration::Dumps;
 use crate::{TrustifyTestContext, resource::TestResourceExt, resource::defer};
 use anyhow::Context;
 use postgresql_embedded::{PostgreSQL, Settings};
@@ -19,15 +21,17 @@ use walkdir::WalkDir;
 pub struct Snapshot {
     #[allow(unused)]
     pub id: String,
+    pub dumps: Dumps,
     pub base: PathBuf,
     pub db_file: String,
     pub storage_file: String,
+    pub snapshot_file: Option<String>,
     pub strip: usize,
     pub fix_zstd: bool,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl Snapshot {
-    #[cfg(not(target_os = "linux"))]
     pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
         let tmp = tempfile::TempDir::new()?;
         let (db, storage, psql) = self.setup(&tmp).await?;
@@ -40,14 +44,29 @@ impl Snapshot {
         ))
     }
 
+    pub fn is_supported() -> bool {
+        false
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Snapshot {
+    pub fn is_supported() -> bool {
+        btrfs::is_supported()
+    }
+
     /// Ensure that a snapshot, with data, is available
     ///
     /// Either by running with a fresh import in a temporary directory. Or, if available, with
     /// a BTRFS snapshot of an import. If such a snapshot doesn't exist yet, it will be created
     /// first.
-    #[cfg(target_os = "linux")]
     pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
-        let running = btrfs::Running::new(&self.id).await?;
+        let running = btrfs::Running::new(SnapshotProvider {
+            id: self.id.clone(),
+            base: self.base.clone(),
+            dumps: self.dumps.clone(),
+        })
+        .await?;
 
         log::info!("Snapshot state: {running:?}");
 
@@ -108,9 +127,11 @@ impl Snapshot {
 
         let Self {
             id: _,
+            dumps: _,
             base,
             db_file,
             storage_file,
+            snapshot_file: _, // we don't work with the snapshot file
             strip,
             fix_zstd,
         } = self;

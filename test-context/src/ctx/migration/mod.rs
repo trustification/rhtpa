@@ -6,6 +6,7 @@ use crate::{
     migration::{Dump, Dumps, Migration},
 };
 use anyhow::Context;
+use migration::Iden;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 use test_context::AsyncTestContext;
 use uuid::Uuid;
@@ -145,19 +146,24 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
         let source = ID::dump_id();
         let source_id = source.id();
 
+        let dumps = Dumps::new()?;
+
         let snapshot = match source {
             Source::Migration(migration) => {
                 let id: Cow<'static, str> = match migration {
                     Some(id) => format!("commit-{id}").into(),
                     None => "latest".into(),
                 };
-                let migration = Migration::new().context("failed to create migration manager")?;
+                let migration =
+                    Migration::new(dumps.clone()).context("failed to create migration manager")?;
                 let base = migration.provide(&id).await?;
                 Snapshot {
                     id: source_id,
+                    dumps,
                     base,
                     db_file: "dump.sql.xz".to_string(),
                     storage_file: "dump.tar".to_string(),
+                    snapshot_file: None,
                     strip: 0,
                     fix_zstd: false,
                 }
@@ -171,7 +177,9 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                 strip,
                 fix_zstd,
             }) => {
-                let base = Dumps::new()?
+                let snapshot_file = Snapshot::is_supported().then(|| "snapshot.tar.xz".to_string());
+
+                let base = dumps
                     .provide(Dump {
                         url: base_url,
                         files: &[db_file, storage_file],
@@ -179,10 +187,12 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     })
                     .await?;
                 Snapshot {
+                    dumps,
                     id: source_id,
                     base,
                     db_file: db_file.to_string(),
                     storage_file: storage_file.to_string(),
+                    snapshot_file,
                     strip,
                     fix_zstd,
                 }

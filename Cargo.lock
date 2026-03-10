@@ -8937,6 +8937,7 @@ dependencies = [
  "actix-http",
  "actix-web",
  "anyhow",
+ "async-compression",
  "async-tar",
  "base16ct 1.0.0",
  "bytes",

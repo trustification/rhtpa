@@ -1,5 +1,7 @@
+use crate::migration::Dumps;
 use crate::resource::TestResource;
 use anyhow::{Context, anyhow, bail};
+use async_compression::tokio::bufread::XzDecoder;
 use futures::future::BoxFuture;
 use postgresql_embedded::{PostgreSQL, Settings};
 use std::{
@@ -12,6 +14,10 @@ use tempfile::TempDir;
 use tokio::fs;
 use trustify_common::{config, db::Database};
 use trustify_module_storage::service::fs::FileSystemBackend;
+
+pub fn is_supported() -> bool {
+    Command::new().is_ok()
+}
 
 #[derive(Clone, Debug)]
 struct Command {
@@ -86,6 +92,82 @@ You can set `TRUST_TEST_BTRFS_STORE` to a directory on a BTRFS volume mounted wi
     }
 }
 
+pub struct SnapshotProvider {
+    pub id: String,
+    /// Migration download base
+    pub base: PathBuf,
+    pub dumps: Dumps,
+}
+
+impl SnapshotProvider {
+    async fn provide(&self, btrfs: &Command) -> anyhow::Result<Option<BtrfsSnapshot>> {
+        let template = btrfs.store.join("templates").join(&self.id);
+        if template.is_dir() {
+            return Ok(Some(BtrfsSnapshot {
+                btrfs: btrfs.clone(),
+                id: self.id.to_string(),
+            }));
+        }
+
+        // detect existing snapshot file
+
+        if self.load_snapshot(&btrfs).await? {
+            log::info!("Imported new snapshot");
+            return Ok(Some(BtrfsSnapshot {
+                btrfs: btrfs.clone(),
+                id: self.id.to_string(),
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// if the snapshot file exists, do load it
+    async fn load_snapshot(&self, btrfs: &Command) -> anyhow::Result<bool> {
+        let snapshot_file = self.base.join("archives").join(&self.id);
+
+        // get remote file to snapshot_file
+        if !snapshot_file.is_file() && !download_file("", &snapshot_file) {
+            // file wasn't there and couldn't be downloaded
+            log::info!(
+                "Snapshot file doesn't exist and couldn't be downloaded: {}",
+                snapshot_file.display()
+            );
+            return Ok(false);
+        }
+
+        log::info!("Extracting snapshot from: {}", snapshot_file.display());
+
+        let templates = btrfs.store.join("templates");
+        fs::create_dir_all(&templates).await?;
+
+        let target = templates.join(&self.id);
+
+        btrfs
+            .execute([
+                OsStr::new("subvolume"),
+                OsStr::new("create"),
+                target.as_os_str(),
+            ])
+            .await?;
+
+        let file = fs::File::open(&snapshot_file).await.with_context(|| {
+            format!("failed to open snapshot file: {}", snapshot_file.display())
+        })?;
+
+        let decoder = XzDecoder::new(tokio::io::BufReader::new(file));
+        let archive = async_tar::Archive::new(decoder);
+        archive
+            .unpack(&target)
+            .await
+            .context("failed to extract snapshot into subvolume")?;
+
+        log::info!("Snapshot extracted into templates/{}", self.id);
+
+        Ok(true)
+    }
+}
+
 /// A running content instance
 #[derive(Debug)]
 pub enum Running {
@@ -97,8 +179,10 @@ pub enum Running {
     Collecting(Collect),
 }
 
+const BTRFS_SNAPSHOT_FILE: &str = "snapshot.tar.xz";
+
 impl Running {
-    pub async fn new(id: impl Into<String>) -> anyhow::Result<Self> {
+    pub async fn new(provider: SnapshotProvider) -> anyhow::Result<Self> {
         let btrfs = match Command::new() {
             Ok(btrfs) => btrfs,
             Err(err) => {
@@ -107,18 +191,15 @@ impl Running {
             }
         };
 
-        let id = id.into();
+        // detect existing template
 
-        // detect existing
-
-        let template = btrfs.store.join("templates").join(&id);
-        if template.is_dir() {
-            return Ok(Running::Existing(BtrfsSnapshot { btrfs, id }));
+        if let Some(snapshot) = provider.provide(&btrfs).await? {
+            return Ok(Running::Existing(snapshot));
         }
 
         // return new collecting
 
-        Ok(Running::Collecting(Collect::new(btrfs, id).await?))
+        Ok(Running::Collecting(Collect::new(btrfs, provider.id).await?))
     }
 }
 
