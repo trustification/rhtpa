@@ -6,7 +6,6 @@ use crate::{
     migration::{Dump, Dumps, Migration},
 };
 use anyhow::Context;
-use migration::Iden;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 use test_context::AsyncTestContext;
 use uuid::Uuid;
@@ -155,11 +154,12 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     None => "latest".into(),
                 };
                 let migration =
-                    Migration::new(dumps.clone()).context("failed to create migration manager")?;
-                let base = migration.provide(&id).await?;
+                    Migration::new(&id).context("failed to create migration manager")?;
+
+                let base = dumps.provide_raw("migration", migration.as_dump()).await?;
+
                 Snapshot {
                     id: source_id,
-                    dumps,
                     base,
                     db_file: "dump.sql.xz".to_string(),
                     storage_file: "dump.tar".to_string(),
@@ -177,22 +177,27 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                 strip,
                 fix_zstd,
             }) => {
-                let snapshot_file = Snapshot::is_supported().then(|| "snapshot.tar.xz".to_string());
+                let snapshot_file = Snapshot::is_supported().then(|| "snapshot.tar.xz");
+
+                let files: Vec<_> = [db_file, storage_file]
+                    .into_iter()
+                    .chain(snapshot_file)
+                    .collect();
 
                 let base = dumps
                     .provide(Dump {
                         url: base_url,
-                        files: &[db_file, storage_file],
+                        files: files.as_slice(),
                         digests,
                     })
                     .await?;
+
                 Snapshot {
-                    dumps,
                     id: source_id,
                     base,
                     db_file: db_file.to_string(),
                     storage_file: storage_file.to_string(),
-                    snapshot_file,
+                    snapshot_file: snapshot_file.map(ToOwned::to_owned),
                     strip,
                     fix_zstd,
                 }

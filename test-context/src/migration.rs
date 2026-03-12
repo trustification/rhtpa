@@ -3,7 +3,7 @@ use base16ct::HexDisplay;
 use futures::StreamExt;
 use git2::{BranchType, Repository};
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::{StatusCode, Url};
+use reqwest::StatusCode;
 use sha2::Digest;
 use std::{env, fs::File, path::Path, path::PathBuf};
 use tokio::{
@@ -15,15 +15,12 @@ use tokio::{
 /// Manage the download of migration dumps
 #[derive(Debug)]
 pub struct Migration {
-    dumps: Dumps,
-    branch: String,
-    region: String,
-    bucket: String,
+    url: String,
 }
 
 impl Migration {
     /// Create a new instance, detecting paths and the branch
-    pub fn new(dumps: Dumps) -> anyhow::Result<Self> {
+    pub fn new(commit: &str) -> anyhow::Result<Self> {
         // get the base of the source code
 
         let cwd: PathBuf = match option_env!("CARGO_MANIFEST_DIR") {
@@ -48,32 +45,24 @@ impl Migration {
         // done
 
         Ok(Self {
-            dumps,
-            branch,
-            region,
-            bucket,
+            url: format!(
+                "https://{bucket}.s3.{region}.amazonaws.com/{branch}/{commit}",
+                bucket = bucket,
+                region = region,
+                branch = branch,
+            ),
         })
     }
 
     /// Provide the base dump path, for this branch.
     ///
     /// This may include downloading content from S3.
-    pub async fn provide(&self, commit: &str) -> anyhow::Result<PathBuf> {
-        self.dumps
-            .provide_raw(
-                "migration",
-                Dump {
-                    url: &format!(
-                        "https://{bucket}.s3.{region}.amazonaws.com/{branch}/{commit}",
-                        bucket = self.bucket,
-                        region = self.region,
-                        branch = self.branch,
-                    ),
-                    files: &["dump.sql.xz", "dump.tar"],
-                    digests: true,
-                },
-            )
-            .await
+    pub fn as_dump(&self) -> Dump<'_, &'static str> {
+        Dump {
+            url: &self.url,
+            files: &["dump.sql.xz", "dump.tar"],
+            digests: true,
+        }
     }
 }
 
@@ -371,7 +360,7 @@ impl Dumps {
     /// Provide the base dump path, for this branch.
     ///
     /// This may include downloading content from S3.
-    async fn provide_raw<'a, S>(
+    pub async fn provide_raw<'a, S>(
         &self,
         r#rtype: &str,
         Dump {
@@ -397,11 +386,13 @@ impl Dumps {
         self.with_lock(&base, async || {
             // download files
 
-            if files.iter().any(|file| !base.join(file).exists()) {
-                download_artifacts_raw(&client, &base, url, digests, &files, false).await?
-            } else {
-                log::debug!("dump files already exist");
-            }
+            let (existing, missing) = files
+                .iter()
+                .partition::<Vec<&str>, _>(|file| base.join(file).exists());
+
+            download_artifacts_raw(&client, &base, url, digests, &missing, false).await?;
+
+            log::info!("Already existed: {}", existing.join(", "));
 
             //  validate checksums
 

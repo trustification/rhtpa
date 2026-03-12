@@ -1,9 +1,11 @@
 #[cfg(target_os = "linux")]
 pub mod btrfs;
 
-use crate::ctx::migration::snapshot::btrfs::SnapshotProvider;
-use crate::migration::Dumps;
-use crate::{TrustifyTestContext, resource::TestResourceExt, resource::defer};
+use crate::{
+    TrustifyTestContext,
+    ctx::migration::snapshot::btrfs::SnapshotProvider,
+    resource::{TestResourceExt, defer},
+};
 use anyhow::Context;
 use postgresql_embedded::{PostgreSQL, Settings};
 use std::{
@@ -21,7 +23,6 @@ use walkdir::WalkDir;
 pub struct Snapshot {
     #[allow(unused)]
     pub id: String,
-    pub dumps: Dumps,
     pub base: PathBuf,
     pub db_file: String,
     pub storage_file: String,
@@ -63,15 +64,14 @@ impl Snapshot {
     pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
         let running = btrfs::Running::new(SnapshotProvider {
             id: self.id.clone(),
-            base: self.base.clone(),
-            dumps: self.dumps.clone(),
+            file: self.snapshot_file.as_ref().map(|file| self.base.join(file)),
         })
         .await?;
 
         log::info!("Snapshot state: {running:?}");
 
         Ok(match running {
-            // we are running with a normal, temporary directory
+            // We are running with a normal, temporary directory
             btrfs::Running::Temporary(tmp) => {
                 // set up the content in the target directory
                 let (db, storage, psql) = self.setup(&tmp).await?;
@@ -127,7 +127,6 @@ impl Snapshot {
 
         let Self {
             id: _,
-            dumps: _,
             base,
             db_file,
             storage_file,

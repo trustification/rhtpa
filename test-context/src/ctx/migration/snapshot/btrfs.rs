@@ -1,4 +1,3 @@
-use crate::migration::Dumps;
 use crate::resource::TestResource;
 use anyhow::{Context, anyhow, bail};
 use async_compression::tokio::bufread::XzDecoder;
@@ -8,11 +7,14 @@ use std::{
     ffi::OsStr,
     fmt::Debug,
     io,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    time::Duration,
 };
 use tempfile::TempDir;
 use tokio::fs;
 use trustify_common::{config, db::Database};
+use trustify_db::embedded::default_settings;
 use trustify_module_storage::service::fs::FileSystemBackend;
 
 pub fn is_supported() -> bool {
@@ -94,9 +96,8 @@ You can set `TRUST_TEST_BTRFS_STORE` to a directory on a BTRFS volume mounted wi
 
 pub struct SnapshotProvider {
     pub id: String,
-    /// Migration download base
-    pub base: PathBuf,
-    pub dumps: Dumps,
+    /// snapshot archive
+    pub file: Option<PathBuf>,
 }
 
 impl SnapshotProvider {
@@ -124,17 +125,13 @@ impl SnapshotProvider {
 
     /// if the snapshot file exists, do load it
     async fn load_snapshot(&self, btrfs: &Command) -> anyhow::Result<bool> {
-        let snapshot_file = self.base.join("archives").join(&self.id);
+        // check if snapshot archive is present
 
-        // get remote file to snapshot_file
-        if !snapshot_file.is_file() && !download_file("", &snapshot_file) {
-            // file wasn't there and couldn't be downloaded
-            log::info!(
-                "Snapshot file doesn't exist and couldn't be downloaded: {}",
-                snapshot_file.display()
-            );
+        let Some(snapshot_file) = &self.file else {
+            // file wasn't there
+            log::info!("Snapshot file wasn't available");
             return Ok(false);
-        }
+        };
 
         log::info!("Extracting snapshot from: {}", snapshot_file.display());
 
@@ -178,8 +175,6 @@ pub enum Running {
     /// A preparation step to create a snapshot
     Collecting(Collect),
 }
-
-const BTRFS_SNAPSHOT_FILE: &str = "snapshot.tar.xz";
 
 impl Running {
     pub async fn new(provider: SnapshotProvider) -> anyhow::Result<Self> {
@@ -236,16 +231,33 @@ impl BtrfsSnapshot {
         let storage = FileSystemBackend::for_test_in(running.join("storage")).await?;
 
         let db_base = running.join("db");
+        fs::set_permissions(&db_base, std::fs::Permissions::from_mode(0o700)).await?;
+
         let settings = Settings {
-            data_dir: db_base.join("data"),
+            // data_dir: db_base.join("data"),
+            data_dir: db_base,
             temporary: false,
-            ..Default::default()
+            timeout: Some(Duration::from_mins(2)),
+            username: "trustify".to_string(),
+            ..default_settings()?
         };
         let mut psql = PostgreSQL::new(settings);
         psql.setup().await?;
-        psql.start().await?;
+        psql.start().await.inspect_err(|_| {
+            let log = std::fs::read_to_string(psql.settings().data_dir.join("start.log"))
+                .unwrap_or_default();
+            log::info!("{}", log);
+        })?;
 
-        let db = config::Database::from_port(psql.settings().port)?;
+        let db = config::Database {
+            url: None,
+            username: psql.settings().username.clone(),
+            password: psql.settings().password.clone().into(),
+            host: psql.settings().host.clone(),
+            port: psql.settings().port,
+            name: "trustify".into(),
+            ..config::Database::from_env()?
+        };
 
         // done
 
