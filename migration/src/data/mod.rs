@@ -15,7 +15,7 @@ use futures_util::{
 use indicatif::{ProgressBar, ProgressStyle};
 use sea_orm::{ConnectionTrait, DatabaseTransaction, DbErr, TransactionTrait};
 use sea_orm_migration::{MigrationTrait, SchemaManager};
-use std::{num::NonZeroU64, sync::Arc};
+use std::{num::NonZeroU64, num::NonZeroUsize, sync::Arc, thread::available_parallelism};
 use tracing::log;
 use trustify_module_storage::service::dispatch::DispatchBackend;
 
@@ -200,7 +200,7 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
         let mut concurrent = options.concurrent;
         if concurrent == 0 {
             // if zero, use number of logical CPUs
-            concurrent = num_cpus::get();
+            concurrent = available_parallelism().map(NonZeroUsize::get).unwrap_or(1);
         }
 
         log::info!("Running {concurrent} parallel operations");
