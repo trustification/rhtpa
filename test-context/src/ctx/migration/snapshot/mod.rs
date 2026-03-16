@@ -3,7 +3,6 @@ pub mod btrfs;
 
 use crate::{
     TrustifyTestContext,
-    ctx::migration::snapshot::btrfs::SnapshotProvider,
     resource::{TestResourceExt, defer},
 };
 use anyhow::Context;
@@ -26,95 +25,13 @@ pub struct Snapshot {
     pub base: PathBuf,
     pub db_file: String,
     pub storage_file: String,
+    #[cfg(target_os = "linux")]
     pub snapshot_file: Option<String>,
     pub strip: usize,
     pub fix_zstd: bool,
 }
 
-#[cfg(not(target_os = "linux"))]
 impl Snapshot {
-    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
-        let tmp = tempfile::TempDir::new()?;
-        let (db, storage, psql) = self.setup(&tmp).await?;
-
-        Ok(TrustifyTestContext::new(
-            db,
-            psql.settings().port,
-            storage,
-            defer(psql).then(defer(tmp)),
-        ))
-    }
-
-    pub fn is_supported() -> bool {
-        false
-    }
-}
-
-#[cfg(target_os = "linux")]
-impl Snapshot {
-    pub fn is_supported() -> bool {
-        btrfs::is_supported()
-    }
-
-    /// Ensure that a snapshot, with data, is available
-    ///
-    /// Either by running with a fresh import in a temporary directory. Or, if available, with
-    /// a BTRFS snapshot of an import. If such a snapshot doesn't exist yet, it will be created
-    /// first.
-    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
-        let running = btrfs::Running::new(SnapshotProvider {
-            id: self.id.clone(),
-            file: self.snapshot_file.as_ref().map(|file| self.base.join(file)),
-        })
-        .await?;
-
-        log::info!("Snapshot state: {running:?}");
-
-        Ok(match running {
-            // We are running with a normal, temporary directory
-            btrfs::Running::Temporary(tmp) => {
-                // set up the content in the target directory
-                let (db, storage, psql) = self.setup(&tmp).await?;
-
-                TrustifyTestContext::new(
-                    db,
-                    psql.settings().port,
-                    storage,
-                    defer(psql).then(defer(tmp)),
-                )
-            }
-            // We are running with an existing snapshot, just enable it
-            btrfs::Running::Existing(snapshot) => {
-                // activate the snapshot, starts the database
-                let started = snapshot.start().await?;
-
-                TrustifyTestContext::new(
-                    started.db().clone(),
-                    started.settings().port,
-                    started.storage().clone(),
-                    started,
-                )
-            }
-            // We need to create the snapshot first, then run it
-            btrfs::Running::Collecting(collect) => {
-                // set up the content in preparation directory
-                let (_, _, psql) = self.setup(&collect).await?;
-
-                // create the snapshot
-                let snapshot = collect.create(psql).await?;
-                // and activate it
-                let started = snapshot.start().await?;
-
-                TrustifyTestContext::new(
-                    started.db().clone(),
-                    started.settings().port,
-                    started.storage().clone(),
-                    started,
-                )
-            }
-        })
-    }
-
     /// This performs the actual DB and storage preparation
     async fn setup(
         self,
@@ -130,7 +47,8 @@ impl Snapshot {
             base,
             db_file,
             storage_file,
-            snapshot_file: _, // we don't work with the snapshot file
+            #[cfg(target_os = "linux")]
+                snapshot_file: _, // we don't work with the snapshot file
             strip,
             fix_zstd,
         } = self;
@@ -224,5 +142,92 @@ impl Snapshot {
         log::info!("Database imported");
 
         Ok((db, storage, postgresql))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Snapshot {
+    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
+        let tmp = tempfile::TempDir::new()?;
+        let (db, storage, psql) = self.setup(&tmp).await?;
+
+        Ok(TrustifyTestContext::new(
+            db,
+            psql.settings().port,
+            storage,
+            defer(psql).then(defer(tmp)),
+        ))
+    }
+
+    pub fn is_supported() -> bool {
+        false
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Snapshot {
+    pub fn is_supported() -> bool {
+        btrfs::is_supported()
+    }
+
+    /// Ensure that a snapshot, with data, is available
+    ///
+    /// Either by running with a fresh import in a temporary directory. Or, if available, with
+    /// a BTRFS snapshot of an import. If such a snapshot doesn't exist yet, it will be created
+    /// first.
+    pub async fn materialize(self) -> anyhow::Result<TrustifyTestContext> {
+        use crate::ctx::migration::snapshot::btrfs::SnapshotProvider;
+
+        let running = btrfs::Running::new(SnapshotProvider {
+            id: self.id.clone(),
+            file: self.snapshot_file.as_ref().map(|file| self.base.join(file)),
+        })
+        .await?;
+
+        log::info!("Snapshot state: {running:?}");
+
+        Ok(match running {
+            // We are running with a normal, temporary directory
+            btrfs::Running::Temporary(tmp) => {
+                // set up the content in the target directory
+                let (db, storage, psql) = self.setup(&tmp).await?;
+
+                TrustifyTestContext::new(
+                    db,
+                    psql.settings().port,
+                    storage,
+                    defer(psql).then(defer(tmp)),
+                )
+            }
+            // We are running with an existing snapshot, just enable it
+            btrfs::Running::Existing(snapshot) => {
+                // activate the snapshot, starts the database
+                let started = snapshot.start().await?;
+
+                TrustifyTestContext::new(
+                    started.db().clone(),
+                    started.settings().port,
+                    started.storage().clone(),
+                    started,
+                )
+            }
+            // We need to create the snapshot first, then run it
+            btrfs::Running::Collecting(collect) => {
+                // set up the content in preparation directory
+                let (_, _, psql) = self.setup(&collect).await?;
+
+                // create the snapshot
+                let snapshot = collect.create(psql).await?;
+                // and activate it
+                let started = snapshot.start().await?;
+
+                TrustifyTestContext::new(
+                    started.db().clone(),
+                    started.settings().port,
+                    started.storage().clone(),
+                    started,
+                )
+            }
+        })
     }
 }

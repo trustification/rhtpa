@@ -163,6 +163,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     base,
                     db_file: "dump.sql.xz".to_string(),
                     storage_file: "dump.tar".to_string(),
+                    #[cfg(target_os = "linux")]
                     snapshot_file: None,
                     strip: 0,
                     fix_zstd: false,
@@ -197,6 +198,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                     base,
                     db_file: db_file.to_string(),
                     storage_file: storage_file.to_string(),
+                    #[cfg(target_os = "linux")]
                     snapshot_file: snapshot_file.map(ToOwned::to_owned),
                     strip,
                     fix_zstd,
