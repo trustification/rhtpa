@@ -112,7 +112,7 @@ impl SnapshotProvider {
 
         // detect existing snapshot file
 
-        if self.load_snapshot(&btrfs).await? {
+        if self.load_snapshot(btrfs).await? {
             log::info!("Imported new snapshot");
             return Ok(Some(BtrfsSnapshot {
                 btrfs: btrfs.clone(),

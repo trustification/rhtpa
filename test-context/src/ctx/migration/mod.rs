@@ -177,7 +177,7 @@ impl<ID: DumpId> TrustifyMigrationContext<ID> {
                 strip,
                 fix_zstd,
             }) => {
-                let snapshot_file = Snapshot::is_supported().then(|| "snapshot.tar.xz");
+                let snapshot_file = Snapshot::is_supported().then_some("snapshot.tar.xz");
 
                 let files: Vec<_> = [db_file, storage_file]
                     .into_iter()
