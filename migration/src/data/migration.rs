@@ -4,7 +4,7 @@ use crate::{
 };
 use clap::Parser;
 use futures::executor::block_on;
-use sea_orm::DbErr;
+use sea_orm::{DatabaseConnection, DbErr};
 use sea_orm_migration::{MigrationName, MigrationTrait, SchemaManager};
 use std::{ffi::OsString, ops::Deref, sync::LazyLock};
 use tokio::task_local;
@@ -79,18 +79,10 @@ impl MigrationWithData {
     }
 }
 
-impl<M> From<M> for MigrationWithData
-where
-    M: MigrationTraitWithData + 'static,
-{
-    fn from(value: M) -> Self {
-        MigrationWithData::new(Box::new(value))
-    }
-}
-
 /// A [`SchemaManager`], extended with data migration features.
 pub struct SchemaDataManager<'c> {
     pub manager: &'c SchemaManager<'c>,
+    pub db: Option<&'c DatabaseConnection>,
     storage: &'c DispatchBackend,
     options: &'c Options,
 }
@@ -106,11 +98,13 @@ impl<'a> Deref for SchemaDataManager<'a> {
 impl<'c> SchemaDataManager<'c> {
     pub fn new(
         manager: &'c SchemaManager<'c>,
+        db: Option<&'c DatabaseConnection>,
         storage: &'c DispatchBackend,
         options: &'c Options,
     ) -> Self {
         Self {
             manager,
+            db,
             storage,
             options,
         }
@@ -126,7 +120,18 @@ impl<'c> SchemaDataManager<'c> {
             return Ok(());
         }
 
-        self.manager.process(self.storage, self.options, f).await
+        match self.db {
+            Some(db) => {
+                self.manager
+                    .process(db, self.storage, self.options, f)
+                    .await
+            }
+            None => {
+                self.manager
+                    .process(self.manager.get_connection(), self.storage, self.options, f)
+                    .await
+            }
+        }
     }
 }
 
@@ -141,7 +146,7 @@ impl MigrationTrait for MigrationWithData {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         MigrationTraitWithData::up(
             &*self.migration,
-            &SchemaDataManager::new(manager, &self.storage, &self.options),
+            &SchemaDataManager::new(manager, None, &self.storage, &self.options),
         )
         .await
         .inspect_err(|err| tracing::warn!("Migration failed: {err}"))
@@ -150,7 +155,7 @@ impl MigrationTrait for MigrationWithData {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         MigrationTraitWithData::down(
             &*self.migration,
-            &SchemaDataManager::new(manager, &self.storage, &self.options),
+            &SchemaDataManager::new(manager, None, &self.storage, &self.options),
         )
         .await
     }

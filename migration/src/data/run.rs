@@ -1,6 +1,6 @@
 use crate::data::{MigratorWithData, Options, SchemaDataManager};
 use anyhow::bail;
-use sea_orm::ConnectOptions;
+use sea_orm::{ConnectOptions, DatabaseConnection, DbErr};
 use sea_orm_migration::{IntoSchemaManagerConnection, SchemaManager};
 use std::{collections::HashMap, time::SystemTime};
 use trustify_module_storage::service::dispatch::DispatchBackend;
@@ -20,9 +20,39 @@ pub struct Runner {
     pub options: Options,
 }
 
+#[derive(Clone)]
 pub enum Database {
     Config { url: String, schema: Option<String> },
-    Provided(sea_orm::DatabaseConnection),
+    Provided(DatabaseConnection),
+}
+
+impl From<DatabaseConnection> for Database {
+    fn from(value: DatabaseConnection) -> Self {
+        Self::Provided(value)
+    }
+}
+
+impl From<trustify_common::db::Database> for Database {
+    fn from(value: trustify_common::db::Database) -> Self {
+        Self::Provided(value.into_connection())
+    }
+}
+
+impl Database {
+    pub async fn try_into_connection(self) -> Result<DatabaseConnection, DbErr> {
+        Ok(match self {
+            Self::Config { url, schema } => {
+                let schema = schema.clone().unwrap_or_else(|| "public".to_owned());
+
+                let connect_options = ConnectOptions::new(url)
+                    .set_schema_search_path(schema)
+                    .to_owned();
+
+                sea_orm::Database::connect(connect_options).await?
+            }
+            Self::Provided(database) => database.clone(),
+        })
+    }
 }
 
 impl Runner {
@@ -41,21 +71,11 @@ impl Runner {
             running.push(migration);
         }
 
-        let database = match self.database {
-            Database::Config { url, schema } => {
-                let schema = schema.unwrap_or_else(|| "public".to_owned());
-
-                let connect_options = ConnectOptions::new(url)
-                    .set_schema_search_path(schema)
-                    .to_owned();
-
-                sea_orm::Database::connect(connect_options).await?
-            }
-            Database::Provided(database) => database,
-        };
+        let database = self.database.clone().try_into_connection().await?;
 
         let manager = SchemaManager::new(database.into_schema_manager_connection());
-        let manager = SchemaDataManager::new(&manager, &self.storage, &self.options);
+        let manager =
+            SchemaDataManager::new(&manager, Some(&database), &self.storage, &self.options);
 
         for run in running {
             tracing::info!(name = run.name(), "Running data migration");

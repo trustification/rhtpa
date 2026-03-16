@@ -4,9 +4,9 @@ use migration::{
     data::{Database, Direction, MigrationWithData, Options, Runner},
 };
 use sea_orm_migration::MigratorTrait;
-use std::num::NonZeroUsize;
 use test_context::test_context;
 use test_log::test;
+use tracing::log;
 use trustify_test_context::{TrustifyMigrationContext, commit, dump};
 
 commit!(Commit("6d3ea814b4b44fe16ea8f21724dda5abb0fc7932"));
@@ -66,13 +66,36 @@ dump!(
     ignore = "enable with: cargo test --features long_running"
 )]
 async fn performance(ctx: &TrustifyMigrationContext<Ds4>) -> Result<(), anyhow::Error> {
+    let migrations = vec![
+        "m0002000_add_sbom_properties".into(),
+        "m0002010_add_advisory_scores".into(),
+    ];
+
+    // we simulate running the migrations out-of-band
+
+    log::info!("Running data migrations out-of-band");
+
+    Runner {
+        database: ctx.db.clone().into(),
+        storage: ctx.storage.clone().into(),
+        direction: Default::default(),
+        migrations: migrations.clone(),
+        options: Default::default(),
+    }
+    .run::<Migrator>()
+    .await?;
+
+    // now run the standard migration, skipping the out-of-band ones
+
+    log::info!("Running migrations");
+
     MigrationWithData::run_with_test(
         ctx.storage.clone(),
         Options {
-            concurrent: NonZeroUsize::new(32).unwrap(),
+            skip: migrations,
             ..Options::default()
         },
-        async { MigratorTest::up(&ctx.db, None).await },
+        async { Migrator::up(&ctx.db, None).await },
     )
     .await?;
 

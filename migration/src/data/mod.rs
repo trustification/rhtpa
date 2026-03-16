@@ -13,12 +13,10 @@ use futures_util::{
     stream::{self, TryStreamExt},
 };
 use indicatif::{ProgressBar, ProgressStyle};
-use sea_orm::{DatabaseTransaction, DbErr, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, DbErr, TransactionTrait};
 use sea_orm_migration::{MigrationTrait, SchemaManager};
-use std::{
-    num::{NonZeroU64, NonZeroUsize},
-    sync::Arc,
-};
+use std::{num::NonZeroU64, sync::Arc};
+use tracing::log;
 use trustify_module_storage::service::dispatch::DispatchBackend;
 
 /// A handler for processing a [`Document`] data migration.
@@ -43,8 +41,10 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, clap::Parser)]
 pub struct Options {
     /// Number of concurrent documents being processes
-    #[arg(long, env = "MIGRATION_DATA_CONCURRENT", default_value = "5")]
-    pub concurrent: NonZeroUsize,
+    ///
+    /// If the value is zero, use the number of logical CPUs
+    #[arg(long, env = "MIGRATION_DATA_CONCURRENT", default_value = "0")]
+    pub concurrent: usize,
 
     /// The instance number of the current runner (zero based)
     #[arg(long, env = "MIGRATION_DATA_CURRENT_RUNNER", default_value = "0")]
@@ -70,7 +70,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            concurrent: unsafe { NonZeroUsize::new_unchecked(5) },
+            concurrent: 5,
             current: 0,
             total: unsafe { NonZeroU64::new_unchecked(1) },
             skip_all: false,
@@ -118,6 +118,7 @@ impl From<&Options> for Partition {
 pub trait DocumentProcessor {
     fn process<D>(
         &self,
+        db: &(impl ConnectionTrait + TransactionTrait),
         storage: &DispatchBackend,
         options: &Options,
         f: impl Handler<D>,
@@ -165,6 +166,7 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
     /// actual system is still running from the read-only clone of the original data.
     async fn process<D>(
         &self,
+        db: &(impl ConnectionTrait + TransactionTrait),
         storage: &DispatchBackend,
         options: &Options,
         f: impl Handler<D>,
@@ -173,7 +175,6 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
         D: Document,
     {
         let partition: Partition = options.into();
-        let db = self.get_connection();
 
         let tx = db.begin().await?;
         let all: Vec<_> = D::all(&tx)
@@ -189,11 +190,20 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
             ProgressStyle::with_template(
                 "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({per_sec}) ({eta})",
             )
-            .map_err(|err| DbErr::Migration(err.to_string()))?
-            .progress_chars("##-"),
+                .map_err(|err| DbErr::Migration(err.to_string()))?
+                .progress_chars("#>-"),
         );
 
         let pb = Some(pb);
+
+        // get concurrency value
+        let mut concurrent = options.concurrent;
+        if concurrent == 0 {
+            // if zero, use number of logical CPUs
+            concurrent = num_cpus::get();
+        }
+
+        log::info!("Running {concurrent} parallel operations");
 
         stream::iter(all)
             .map(async |model| {
@@ -220,7 +230,7 @@ impl<'c> DocumentProcessor for SchemaManager<'c> {
 
                 Ok::<_, DbErr>(())
             })
-            .buffer_unordered(options.concurrent.into())
+            .buffer_unordered(concurrent)
             .try_collect::<Vec<_>>()
             .await?;
 

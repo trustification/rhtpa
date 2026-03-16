@@ -8545,6 +8545,7 @@ dependencies = [
  "futures-util",
  "humantime",
  "indicatif",
+ "num_cpus",
  "osv",
  "sea-orm",
  "sea-orm-migration",

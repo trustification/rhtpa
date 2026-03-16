@@ -28,6 +28,7 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 humantime = { workspace = true }
 indicatif = { workspace = true, features = ["tokio", "futures"] }
+num_cpus = { workspace = true }
 osv = { workspace = true, features = ["schema"] }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true, features = ["runtime-tokio-rustls", "sqlx-postgres", "with-uuid"] }
