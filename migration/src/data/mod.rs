@@ -40,7 +40,7 @@ where
 
 #[derive(Clone, Debug, PartialEq, Eq, clap::Parser)]
 pub struct Options {
-    /// Number of concurrent documents being processes
+    /// Number of concurrent documents being processed
     ///
     /// If the value is zero, use the number of logical CPUs
     #[arg(long, env = "MIGRATION_DATA_CONCURRENT", default_value = "0")]
@@ -70,7 +70,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            concurrent: 5,
+            concurrent: 0,
             current: 0,
             total: unsafe { NonZeroU64::new_unchecked(1) },
             skip_all: false,
