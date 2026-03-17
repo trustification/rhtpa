@@ -109,6 +109,11 @@ jobs:
         run: |
           docker compose -f etc/deploy/compose/compose-minio.yaml up -d --wait
 
+      - name: Create tmp dir
+        run: |
+          sudo mkdir /mnt/trustify
+          sudo chmod a+rwx /mnt/trustify
+
       - name: Test
         run: cargo test --all-features
         env:
@@ -116,6 +121,7 @@ jobs:
           RUST_LOG: info,sqlx=error,sea_orm=error
           TRUSTIFY_S3_AWS_REGION: eu-west-1
           TRUSTIFY_S3_AWS_BUCKET: guacsec-migration-dumps
+          TMPDIR: /mnt/trustify
 
       - name: Export and Validate Generated Openapi Spec
         run: |
