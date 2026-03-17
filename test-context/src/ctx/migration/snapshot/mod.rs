@@ -98,6 +98,8 @@ impl Snapshot {
             log::info!("Fixing zstd EOF markers");
 
             const ZSTD_EOF_BYTES: [u8; 3] = [0x01, 0x00, 0x00];
+            // this is using sync FS operations, which is not perfect, but ok considering this is
+            // test only code
             for entry in WalkDir::new(tmp_storage) {
                 let entry = entry.context("failed to walk storage directory")?;
                 if entry.file_type().is_file()

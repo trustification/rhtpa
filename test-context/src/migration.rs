@@ -386,9 +386,10 @@ impl Dumps {
         self.with_lock(&base, async || {
             // download files
 
-            let (existing, missing) = files
-                .iter()
-                .partition::<Vec<&str>, _>(|file| base.join(file).exists());
+            let (existing, missing) = files.iter().partition::<Vec<&str>, _>(|file| {
+                // we're using a block call here, this keeps things simple, and it's only test code
+                base.join(file).exists()
+            });
 
             download_artifacts_raw(&client, &base, url, digests, &missing, false).await?;
 
