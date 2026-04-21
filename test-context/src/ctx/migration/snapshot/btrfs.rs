@@ -331,7 +331,9 @@ pub struct Collect {
 
 impl Collect {
     async fn new(btrfs: Command, id: String) -> anyhow::Result<Self> {
-        let path = btrfs.store.join("prepare").join(&id);
+        let path = btrfs.store.join("prepare");
+        fs::create_dir_all(&path).await?;
+        let path = path.join(&id);
 
         if path.exists() {
             log::info!(
