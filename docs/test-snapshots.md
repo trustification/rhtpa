@@ -30,3 +30,5 @@ short-lived and removed after a test was run.
 If the requirements are not met (non-Linux platform, missing `btrfs` tool, or the store path is not on a BTRFS
 filesystem), tests will automatically fall back to creating a temporary directory per test and running import
 operations every time. This is slower, but does run tests.
+
+The temporary directory will be the sytem temporary directory, but can be overridden by using the `TMPDIR` variable.
