@@ -27,7 +27,7 @@ async fn test_simple_analysis_service(ctx: &TrustifyContext) -> Result<(), anyho
     ctx.ingest_documents(["spdx/simple.json", "spdx/simple.json"])
         .await?; //double ingestion intended
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -87,7 +87,7 @@ async fn test_simple_analysis_cyclonedx_service(
     ctx.ingest_documents(["cyclonedx/simple.json", "cyclonedx/simple.json"])
         .await?; //double ingestion intended
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -145,7 +145,7 @@ async fn test_simple_analysis_cyclonedx_service(
 async fn test_simple_by_name_analysis_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -194,7 +194,7 @@ async fn simple_by_name_analysis_service_filter_rel(
 ) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -235,7 +235,7 @@ async fn simple_by_name_analysis_service_filter_rel(
 async fn test_simple_by_purl_analysis_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let component_purl: Purl = Purl::from_str("pkg:rpm/redhat/B@0.0.0").map_err(Error::Purl)?;
 
@@ -287,7 +287,7 @@ async fn test_quarkus_analysis_service(ctx: &TrustifyContext) -> Result<(), anyh
     ])
     .await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -336,7 +336,7 @@ async fn test_quarkus_analysis_service(ctx: &TrustifyContext) -> Result<(), anyh
 async fn test_status_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
     let all_graphs = service.load_all_graphs(&ctx.db).await?;
     assert_eq!(all_graphs.len(), 1);
 
@@ -369,7 +369,7 @@ async fn test_status_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error>
 async fn test_cache_size_used(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
     assert_eq!(service.cache_size_used(), 0u64);
 
     let all_graphs = service.load_all_graphs(&ctx.db).await?;
@@ -397,7 +397,7 @@ async fn test_cache_size_used(ctx: &TrustifyContext) -> Result<(), anyhow::Error
             max_cache_size: BinaryByteSize::from(small_sbom_size * 2),
             ..Default::default()
         },
-        ctx.db.clone(),
+        ReadOnly::new(ctx.db.clone()),
     );
 
     let all_graphs = service.load_all_graphs(&ctx.db).await?;
@@ -416,7 +416,7 @@ async fn test_cache_size_used(ctx: &TrustifyContext) -> Result<(), anyhow::Error
 async fn test_simple_deps_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -456,7 +456,7 @@ async fn test_simple_deps_service(ctx: &TrustifyContext) -> Result<(), anyhow::E
 async fn test_simple_deps_cyclonedx_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["cyclonedx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -492,7 +492,7 @@ async fn test_simple_deps_cyclonedx_service(ctx: &TrustifyContext) -> Result<(),
 async fn test_simple_by_name_deps_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -526,7 +526,7 @@ async fn test_simple_by_name_deps_service(ctx: &TrustifyContext) -> Result<(), a
 async fn test_simple_by_purl_deps_service(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     ctx.ingest_documents(["spdx/simple.json"]).await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let component_purl: Purl =
         Purl::from_str("pkg:rpm/redhat/AA@0.0.0?arch=src").map_err(Error::Purl)?;
@@ -562,7 +562,7 @@ async fn test_quarkus_deps_service(ctx: &TrustifyContext) -> Result<(), anyhow::
     ])
     .await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let analysis_graph = service
         .retrieve(
@@ -587,7 +587,7 @@ async fn test_retrieve_all_sbom_roots_by_name(ctx: &TrustifyContext) -> Result<(
     ctx.ingest_documents(["spdx/quarkus-bom-3.2.11.Final-redhat-00001.json"])
         .await?;
 
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
     let component_name = "quarkus-vertx-http".to_string();
 
     let analysis_graph = service
@@ -659,7 +659,7 @@ async fn load_performance(ctx: &TrustifyContext) -> Result<(), anyhow::Error> {
     log::info!("Start populating graph");
 
     let start = SystemTime::now();
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
     service.load_all_graphs(&ctx.db).await?;
 
     log::info!(
@@ -688,7 +688,7 @@ async fn load_performance_parallel(ctx: &TrustifyContext) -> Result<(), anyhow::
     log::info!("Start populating graph");
 
     let start = SystemTime::now();
-    let service = AnalysisService::new(AnalysisConfig::default(), ctx.db.clone());
+    let service = AnalysisService::new(AnalysisConfig::default(), ReadOnly::new(ctx.db.clone()));
 
     let mut tasks = vec![];
     for _ in 0..10 {
