@@ -4,9 +4,10 @@ use crate::{
         details::base_purl::BasePurlDetails,
         summary::{base_purl::BasePurlSummary, purl::PurlSummary},
     },
-    test::{caller, caller_with, caller_with_redhat_patterns},
+    test::{caller, caller_with},
 };
 use actix_web::test::TestRequest;
+use regex::Regex;
 use rstest::rstest;
 use serde_json::{Value, json};
 use std::str::FromStr;
@@ -331,7 +332,15 @@ async fn get_recommendations(ctx: &TrustifyContext) -> Result<(), anyhow::Error>
     .await?;
 
     // When requesting recommendations for a duplicated PURL
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(
         &app,
         &[
@@ -388,7 +397,15 @@ async fn get_recommendations_no_version(ctx: &TrustifyContext) -> Result<(), any
         .await?;
 
     // When requesting recommendations for a PURL without a version
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:maven/jakarta.el/jakarta.el-api"]).await;
 
     log::info!("{recommendations:#?}");
@@ -424,7 +441,15 @@ async fn get_recommendations_dedup(ctx: &TrustifyContext) -> Result<(), anyhow::
     .await?;
 
     // When requesting recommendations
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:cargo/hyper@0.14.1"]).await;
 
     log::info!("{recommendations:#?}");
@@ -483,7 +508,15 @@ async fn get_recommendations_other_status(ctx: &TrustifyContext) -> Result<(), a
     }
 
     // When requesting recommendations
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:cargo/hyper@0.14.1"]).await;
 
     log::info!("{recommendations:#?}");
@@ -523,7 +556,15 @@ async fn get_recommendations_no_match(
     ctx.ingest_documents(["cve/CVE-2022-45787.json"]).await?;
 
     // When requesting recommendations for a non-matching PURL
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &[purl]).await;
 
     // Then the response matches the expected empty result
@@ -545,7 +586,15 @@ async fn get_recommendations_no_namespace(ctx: &TrustifyContext) -> Result<(), a
         .await?;
 
     // When requesting recommendations
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:cargo/serde@1.0.0"]).await;
 
     // Then the recommendation returns the Red Hat package
@@ -570,7 +619,15 @@ async fn get_recommendations_mixed(ctx: &TrustifyContext) -> Result<(), anyhow::
     ctx.ingest_documents(["cve/CVE-2022-45787.json"]).await?;
 
     // When requesting recommendations for a mix of known, unknown, and versionless PURLs
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(
         &app,
         &[
@@ -617,7 +674,15 @@ async fn get_recommendations_fallback_package_str(
     .await?;
 
     // When requesting recommendations
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:cargo/tokio@1.0.0"]).await;
 
     // Then the versioned PURL is returned as the package string
@@ -681,7 +746,15 @@ async fn get_recommendations_fixed_status(ctx: &TrustifyContext) -> Result<(), a
     }
 
     // When requesting recommendations
-    let app = caller_with_redhat_patterns(ctx).await?;
+    let app = caller_with(
+        ctx,
+        Config {
+            recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+            ..Default::default()
+        },
+        PaginationCache::for_test(),
+    )
+    .await?;
     let recommendations = recommend(&app, &["pkg:cargo/hyper@0.14.1"]).await;
 
     // Then the vulnerability status is reported as "Fixed"
@@ -741,9 +814,6 @@ async fn get_recommendations_no_patterns(ctx: &TrustifyContext) -> Result<(), an
 async fn get_recommendations_highest_rebuild_selected(
     ctx: &TrustifyContext,
 ) -> Result<(), anyhow::Error> {
-    use regex::Regex;
-    use trustify_common::db::pagination_cache::PaginationCache;
-
     // Given two vendor rebuilds of the same upstream version
     ctx.graph
         .ingest_qualified_package(
@@ -788,9 +858,6 @@ async fn get_recommendations_highest_rebuild_selected(
 async fn get_recommendations_best_across_patterns(
     ctx: &TrustifyContext,
 ) -> Result<(), anyhow::Error> {
-    use regex::Regex;
-    use trustify_common::db::pagination_cache::PaginationCache;
-
     // Given pattern 1 matches myorg-00001 and pattern 2 matches redhat-00002.
     // "3.0.3.redhat-00002" > "3.0.3.myorg-00001" lexicographically (r > m),
     // so the correct answer is redhat-00002. With find_map only pattern 1 fires
