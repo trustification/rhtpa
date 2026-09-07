@@ -8,6 +8,18 @@ use bytesize::ByteSize;
 use futures::FutureExt;
 use regex::Regex;
 use std::{env, path::PathBuf, process::ExitCode, sync::Arc};
+
+/// Clap value parser for `TRUSTD_RECOMMEND_PATTERNS`: compiles the regex and validates it has exactly one capture group.
+fn parse_recommend_pattern(s: &str) -> Result<Regex, String> {
+    let re = Regex::new(s).map_err(|e| format!("invalid regex pattern {s:?}: {e}"))?;
+    if re.captures_len() != 2 {
+        return Err(format!(
+            "pattern {s:?} must have exactly 1 capture group, found {}",
+            re.captures_len() - 1
+        ));
+    }
+    Ok(re)
+}
 use tokio::sync::oneshot;
 use trustify_auth::{
     auth::AuthConfigArguments,
@@ -93,8 +105,13 @@ pub struct Run {
     /// Each pattern must have exactly one capture group extracting the upstream base version.
     /// Example: `^(.+)\.redhat-[0-9]+$,^(.+)\.SP[0-9]+-redhat-[0-9]+$`
     /// When absent or empty, the recommendation endpoint returns no results.
-    #[arg(long, env = "TRUSTD_RECOMMEND_PATTERNS", value_delimiter = ',')]
-    pub recommend_patterns: Vec<String>,
+    #[arg(
+        long,
+        env = "TRUSTD_RECOMMEND_PATTERNS",
+        value_delimiter = ',',
+        value_parser = parse_recommend_pattern
+    )]
+    pub recommend_patterns: Vec<Regex>,
 
     /// The size limit of documents in a dataset, uncompressed.
     #[arg(
@@ -473,36 +490,12 @@ impl InitData {
             oidc_load_user: run.ui.load_user.to_string(),
         };
 
-        let recommend_patterns: Vec<Regex> = run
-            .recommend_patterns
-            .iter()
-            .filter_map(|p| {
-                let re = match Regex::new(p) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        log::warn!("TRUSTD_RECOMMEND_PATTERNS: skipping invalid pattern {:?}: {e}", p);
-                        return None;
-                    }
-                };
-                // exactly one capture group required
-                if re.captures_len() != 2 {
-                    log::warn!(
-                        "TRUSTD_RECOMMEND_PATTERNS: skipping pattern {:?}: expected exactly 1 capture group, found {}",
-                        p,
-                        re.captures_len() - 1
-                    );
-                    return None;
-                }
-                Some(re)
-            })
-            .collect();
-
         let config = ModuleConfig {
             fundamental: trustify_module_fundamental::endpoints::Config {
                 sbom_upload_limit: run.sbom_upload_limit.into(),
                 advisory_upload_limit: run.advisory_upload_limit.into(),
                 max_group_name_length: run.max_group_name_length,
-                recommend_patterns,
+                recommend_patterns: run.recommend_patterns,
             },
             ingestor: trustify_module_ingestor::endpoints::Config {
                 dataset_entry_limit: run.dataset_entry_limit.into(),
