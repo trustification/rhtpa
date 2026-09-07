@@ -2,7 +2,7 @@ use super::oci::Reference;
 use crate::{
     model::QuayImporter,
     runner::{
-        common::Error,
+        common::{Error, http::build_http_client},
         context::RunContext,
         progress::{Progress, ProgressInstance},
         quay::oci,
@@ -11,7 +11,6 @@ use crate::{
 };
 use anyhow::anyhow;
 use futures::{Stream, TryStreamExt, stream};
-use reqwest::header;
 use serde::Deserialize;
 use std::{collections::HashMap, future, sync::Arc};
 use time::OffsetDateTime;
@@ -46,10 +45,10 @@ impl<C: RunContext> QuayWalker<C> {
         report: Arc<Mutex<ReportBuilder>>,
         context: C,
     ) -> Result<Self, Error> {
-        let client = match importer.api_token {
-            Some(ref token) => authorized_client(token)?,
+        let client = match &importer.auth {
+            Some(auth) => build_http_client(Some(auth))?,
             None => {
-                log::warn!("Quay API token not configured; results may be limited");
+                log::warn!("Quay auth not configured; results may be limited");
                 Default::default()
             }
         };
@@ -248,17 +247,6 @@ impl<C: RunContext> QuayWalker<C> {
             Some(max) => sbom.size <= max.as_u64(),
         }
     }
-}
-
-fn authorized_client(token: &str) -> Result<reqwest::Client, Error> {
-    let token = format!("Bearer {token}");
-    let mut auth_value = header::HeaderValue::from_str(&token)?;
-    auth_value.set_sensitive(true);
-    let mut headers = header::HeaderMap::new();
-    headers.insert(header::AUTHORIZATION, auth_value);
-    Ok(reqwest::Client::builder()
-        .default_headers(headers)
-        .build()?)
 }
 
 #[derive(Debug, Deserialize)]
