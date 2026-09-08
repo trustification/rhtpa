@@ -303,11 +303,11 @@ struct Sbom {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::model::auth::{AuthConfig, AuthMethod, CredentialSource};
     use test_context::test_context;
     use test_log::test;
     use trustify_common::db::ReadWrite;
     use trustify_test_context::TrustifyContext;
-    use crate::model::auth::{AuthConfig, AuthMethod, CredentialSource};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{header, method, path, path_regex},
