@@ -167,10 +167,12 @@ Named `m<7-digit-number>_<description>.rs` (e.g., `m0002030_create_ai.rs`). SQL 
 
 ```rust
 // Good — typed error in library code
+use std::io::Error;
+
 #[derive(Debug, thiserror::Error)]
 enum ResolveError {
     #[error("failed to read file '{path}': {source}")]
-    FileRead { path: String, #[source] source: std::io::Error },
+    FileRead { path: String, #[source] source: Error },
 }
 fn resolve(path: &str) -> Result<String, ResolveError> { ... }
 
