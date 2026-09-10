@@ -2,6 +2,7 @@ mod oci;
 mod walker;
 
 use crate::model::QuayImporter;
+use crate::model::auth::CredentialConfig;
 use crate::runner::{
     RunOutput,
     context::RunContext,
@@ -20,6 +21,7 @@ impl super::ImportRunner {
         context: impl RunContext + 'static,
         quay: QuayImporter,
         continuation: serde_json::Value,
+        credential_config: CredentialConfig,
     ) -> Result<RunOutput, ScannerError> {
         let ingestor =
             IngestorService::new(Graph::new(), self.storage.clone(), self.analysis.clone());
@@ -33,6 +35,7 @@ impl super::ImportRunner {
             self.db.clone(),
             report.clone(),
             context,
+            credential_config,
         )
         .map_err(|e| ScannerError::Critical(e.into()))?
         .continuation(continuation);

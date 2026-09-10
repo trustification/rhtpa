@@ -1,6 +1,6 @@
 use super::oci::Reference;
 use crate::{
-    model::QuayImporter,
+    model::{QuayImporter, auth::CredentialConfig},
     runner::{
         common::{Error, http::build_http_client},
         context::RunContext,
@@ -44,9 +44,10 @@ impl<C: RunContext> QuayWalker<C> {
         db: ReadWrite,
         report: Arc<Mutex<ReportBuilder>>,
         context: C,
+        credential_config: CredentialConfig,
     ) -> Result<Self, Error> {
         let client = match &importer.auth {
-            Some(auth) => build_http_client(Some(auth))?,
+            Some(auth) => build_http_client(Some(auth), &credential_config)?,
             None => {
                 log::warn!("Quay auth not configured; results may be limited");
                 Default::default()
@@ -327,6 +328,7 @@ mod test {
             ReadWrite::new(ctx.db.clone()),
             Arc::new(Mutex::new(ReportBuilder::new())),
             (),
+            CredentialConfig::default(),
         )?
         .continuation(LastModified(Some(
             OffsetDateTime::now_utc().unix_timestamp(),
@@ -387,6 +389,7 @@ mod test {
             ReadWrite::new(ctx.db.clone()),
             report.clone(),
             (),
+            CredentialConfig::default(),
         )?;
         walker.run().await?;
 
@@ -431,6 +434,7 @@ mod test {
             ReadWrite::new(ctx.db.clone()),
             report.clone(),
             (),
+            CredentialConfig::default(),
         )?;
         walker.run().await?;
 
@@ -503,6 +507,7 @@ mod test {
             ReadWrite::new(ctx.db.clone()),
             report.clone(),
             (),
+            CredentialConfig::default(),
         )?;
         walker.run().await?;
 
@@ -526,6 +531,7 @@ mod test {
             ReadWrite::new(ctx.db.clone()),
             Arc::new(Mutex::new(ReportBuilder::new())),
             (),
+            CredentialConfig::default(),
         )?;
         assert!(walker.run().await.is_err());
 
