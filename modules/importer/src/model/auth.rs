@@ -1,4 +1,12 @@
+use std::{
+    env::{VarError, var},
+    fs::read_to_string,
+    io::Error,
+};
+
 use utoipa::ToSchema;
+
+const ALLOWED_ENV_PREFIX: &str = "IMPORTER_AUTH_";
 
 /// How a credential value is sourced at import time.
 ///
@@ -17,7 +25,10 @@ use utoipa::ToSchema;
 )]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum CredentialSource {
-    /// Literal value stored in the database (development use only).
+    /// Literal value stored in the database.
+    ///
+    /// **Security:** the credential is stored in plaintext in the database.
+    /// Prefer [`CredentialSource::Env`] or [`CredentialSource::File`] for production use.
     Inline(String),
     /// Name of an environment variable read at import time.
     Env(String),
@@ -25,17 +36,42 @@ pub enum CredentialSource {
     File(String),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("failed to read environment variable '{name}': {error}")]
+    EnvVar {
+        name: String,
+        #[source]
+        error: VarError,
+    },
+    #[error("env var '{name}' is not allowed; must start with '{ALLOWED_ENV_PREFIX}'")]
+    EnvVarNotAllowed { name: String },
+    #[error("failed to read file '{path}': {error}")]
+    FileRead {
+        path: String,
+        #[source]
+        error: Error,
+    },
+}
+
 impl CredentialSource {
     /// Resolves the credential to its string value.
-    pub fn resolve(&self) -> anyhow::Result<String> {
+    pub fn resolve(&self) -> Result<String, AuthError> {
         match self {
             Self::Inline(v) => Ok(v.clone()),
             Self::Env(name) => {
-                std::env::var(name).map_err(|e| anyhow::anyhow!("env var {name}: {e}"))
+                if !name.starts_with(ALLOWED_ENV_PREFIX) {
+                    return Err(AuthError::EnvVarNotAllowed { name: name.clone() });
+                }
+                var(name).map_err(|e| AuthError::EnvVar {
+                    name: name.clone(),
+                    error: e,
+                })
             }
-            Self::File(path) => {
-                std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("file {path}: {e}"))
-            }
+            Self::File(path) => read_to_string(path).map_err(|e| AuthError::FileRead {
+                path: path.clone(),
+                error: e,
+            }),
         }
     }
 }
@@ -87,6 +123,13 @@ pub struct AuthConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        env::{remove_var, set_var},
+        fs::write,
+    };
+
+    use tempfile::tempdir;
+
     use super::*;
 
     /// Verifies that an Inline credential resolves to its literal value.
@@ -101,33 +144,44 @@ mod tests {
     fn credential_source_env_reads_variable() {
         // Given an env var is set
         // SAFETY: test-only mutation, single-threaded test binary
-        unsafe { std::env::set_var("TC6090_TEST_VAR", "env-value") };
+        unsafe { set_var("IMPORTER_AUTH_TC6090_TEST_VAR", "env-value") };
 
         // When resolving
-        let src = CredentialSource::Env("TC6090_TEST_VAR".into());
+        let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_TEST_VAR".into());
 
         // Then the value matches the env var
         assert_eq!(src.resolve().unwrap(), "env-value");
         // SAFETY: test-only mutation, single-threaded test binary
-        unsafe { std::env::remove_var("TC6090_TEST_VAR") };
+        unsafe { remove_var("IMPORTER_AUTH_TC6090_TEST_VAR") };
     }
 
     /// Verifies that an Env credential errors when the variable is not set.
     #[test]
     fn credential_source_env_errors_when_not_set() {
         // SAFETY: test-only mutation, single-threaded test binary
-        unsafe { std::env::remove_var("TC6090_MISSING_VAR") };
-        let src = CredentialSource::Env("TC6090_MISSING_VAR".into());
-        assert!(src.resolve().is_err());
+        unsafe { remove_var("IMPORTER_AUTH_TC6090_MISSING_VAR") };
+        let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_MISSING_VAR".into());
+        assert!(
+            matches!(src.resolve(), Err(AuthError::EnvVar { name, .. }) if name == "IMPORTER_AUTH_TC6090_MISSING_VAR")
+        );
+    }
+
+    /// Verifies that an Env credential errors when the variable is not allowed.
+    #[test]
+    fn credential_source_env_errors_when_not_allowed() {
+        let src = CredentialSource::Env("NOT_ALLOWED_VAR".into());
+        assert!(
+            matches!(src.resolve(), Err(AuthError::EnvVarNotAllowed { name }) if name == "NOT_ALLOWED_VAR")
+        );
     }
 
     /// Verifies that a File credential reads file content.
     #[test]
     fn credential_source_file_reads_content() {
         // Given a temp file with known content
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let path = dir.path().join("secret.txt");
-        std::fs::write(&path, "file-secret").unwrap();
+        write(&path, "file-secret").unwrap();
 
         // When resolving
         let src = CredentialSource::File(path.to_string_lossy().into_owned());

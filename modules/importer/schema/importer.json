@@ -757,7 +757,7 @@
       "description": "How a credential value is sourced at import time.\n\nInline stores the value directly (dev only). Env and File store\nonly a reference — the value is resolved from the environment or\nfilesystem at each import run, enabling K8s Secret rotation.",
       "oneOf": [
         {
-          "description": "Literal value stored in the database (development use only).",
+          "description": "Literal value stored in the database.\n\n**Security:** the credential is stored in plaintext in the database.\nPrefer [`CredentialSource::Env`] or [`CredentialSource::File`] for production use.",
           "type": "object",
           "properties": {
             "type": {

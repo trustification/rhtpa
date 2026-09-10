@@ -8,7 +8,13 @@ use sea_orm_migration::prelude::*;
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
-const UP_SQL: &str = r#"
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
 UPDATE importer
 SET configuration = jsonb_set(
     configuration - 'apiToken',
@@ -25,9 +31,17 @@ SET configuration = jsonb_set(
 )
 WHERE configuration->>'type' = 'quay'
   AND configuration->>'apiToken' IS NOT NULL;
-"#;
+"#,
+            )
+            .await
+            .map(|_| ())
+    }
 
-const DOWN_SQL: &str = r#"
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
 UPDATE importer
 SET configuration = jsonb_set(
     configuration - 'auth',
@@ -38,22 +52,8 @@ WHERE configuration->>'type' = 'quay'
   AND configuration->'auth'->'method'->>'type' = 'bearer'
   AND configuration->'auth'->'method'->'token'->>'type' = 'inline'
   AND configuration->'auth'->'method'->'token'->>'value' IS NOT NULL;
-"#;
-
-#[async_trait::async_trait]
-impl MigrationTrait for Migration {
-    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(UP_SQL)
-            .await
-            .map(|_| ())
-    }
-
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(DOWN_SQL)
+"#,
+            )
             .await
             .map(|_| ())
     }

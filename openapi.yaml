@@ -5034,7 +5034,11 @@ components:
     CredentialSource:
       oneOf:
       - type: object
-        description: Literal value stored in the database (development use only).
+        description: |-
+          Literal value stored in the database.
+
+          **Security:** the credential is stored in plaintext in the database.
+          Prefer [`CredentialSource::Env`] or [`CredentialSource::File`] for production use.
         required:
         - value
         - type
@@ -5045,7 +5049,11 @@ components:
             - inline
           value:
             type: string
-            description: Literal value stored in the database (development use only).
+            description: |-
+              Literal value stored in the database.
+
+              **Security:** the credential is stored in plaintext in the database.
+              Prefer [`CredentialSource::Env`] or [`CredentialSource::File`] for production use.
       - type: object
         description: Name of an environment variable read at import time.
         required:
