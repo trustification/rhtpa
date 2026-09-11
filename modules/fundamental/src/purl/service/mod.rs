@@ -126,16 +126,26 @@ pub struct PurlService {
 }
 
 impl PurlService {
-    pub fn new(cache: PaginationCache, recommend_patterns: Vec<Regex>) -> Self {
+    pub fn new(cache: PaginationCache) -> Self {
         Self {
             cache,
-            recommend_patterns,
+            recommend_patterns: vec![],
         }
     }
 
-    /// Convenience constructor for tests — uses [`default_recommend_patterns`].
-    pub fn with_default_patterns(self: PaginationCache) -> Self {
-        Self::new(cache, Self::default_recommend_patterns())
+    #[cfg(test)]
+    pub fn with_default_patterns(self) -> Self {
+        Self {
+            recommend_patterns: Self::default_recommend_patterns(),
+            ..self
+        }
+    }
+
+    pub fn with_recommend_patterns(self, patterns: Vec<Regex>) -> Self {
+        Self {
+            recommend_patterns: patterns,
+            ..self
+        }
     }
 
     /// Default recommend patterns for vendor rebuilds.

@@ -32,7 +32,7 @@ pub fn configure(
     cache: PaginationCache,
     recommend_patterns: Vec<Regex>,
 ) {
-    let purl_service = PurlService::new(cache, recommend_patterns);
+    let purl_service = PurlService::new(cache).with_recommend_patterns(recommend_patterns);
 
     config
         .app_data(web::Data::new(db))

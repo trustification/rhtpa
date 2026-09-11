@@ -5,7 +5,6 @@ use trustify_common::{
     middleware::StdMiddleware,
 };
 use regex::Regex;
-use trustify_common::db::{self, pagination_cache::PaginationCache};
 use trustify_module_analysis::config::AnalysisConfig;
 use trustify_module_analysis::service::AnalysisService;
 use trustify_module_ingestor::graph::Graph;
