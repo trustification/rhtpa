@@ -101,8 +101,8 @@ mod tests {
             },
         };
         let credential_config = CredentialConfig {
-            allowed_prefix: "IMPORTER_AUTH_".into(),
-            allowed_paths: vec![],
+            allowed_prefixes: Some(vec!["IMPORTER_AUTH_".into()]),
+            allowed_paths: None,
         };
 
         // When building the client
@@ -125,8 +125,8 @@ mod tests {
             },
         };
         let credential_config = CredentialConfig {
-            allowed_prefix: "IMPORTER_AUTH_".into(),
-            allowed_paths: vec![],
+            allowed_prefixes: Some(vec!["IMPORTER_AUTH_".into()]),
+            allowed_paths: None,
         };
 
         // When building the client

@@ -1,8 +1,7 @@
 mod oci;
 mod walker;
 
-use crate::model::QuayImporter;
-use crate::model::auth::CredentialConfig;
+use crate::model::{QuayImporter, auth::CredentialConfig};
 use crate::runner::{
     RunOutput,
     context::RunContext,
