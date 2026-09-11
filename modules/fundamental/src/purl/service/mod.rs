@@ -134,7 +134,7 @@ impl PurlService {
     }
 
     /// Convenience constructor for tests — uses [`default_recommend_patterns`].
-    pub fn with_default_patterns(cache: PaginationCache) -> Self {
+    pub fn with_default_patterns(self: PaginationCache) -> Self {
         Self::new(cache, Self::default_recommend_patterns())
     }
 
