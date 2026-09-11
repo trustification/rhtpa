@@ -133,14 +133,18 @@ impl PurlService {
         }
     }
 
-    /// Convenience constructor for tests — uses `^(.+)[.-]redhat-[0-9]+$` (one capture group).
-    /// Matches both dot-separated (`3.0.3.redhat-00002`) and hyphen-separated (`0.14.1-redhat-00001`) vendor rebuilds.
-    #[allow(clippy::expect_used)]
+    /// Convenience constructor for tests — uses [`default_recommend_patterns`].
     pub fn with_default_patterns(cache: PaginationCache) -> Self {
-        Self::new(
-            cache,
-            vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid default pattern")],
-        )
+        Self::new(cache, Self::default_recommend_patterns())
+    }
+
+    /// Default recommend patterns for vendor rebuilds.
+    ///
+    /// Matches both dot-separated (`3.0.3.redhat-00002`) and hyphen-separated (`0.14.1-redhat-00001`) vendor rebuilds.
+    /// `expect` is safe: the regex is a hardcoded literal known to be valid at compile time.
+    #[allow(clippy::expect_used)]
+    pub fn default_recommend_patterns() -> Vec<Regex> {
+        vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid default pattern")]
     }
 
     #[instrument(skip(self, connection), err(level=tracing::Level::INFO))]

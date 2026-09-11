@@ -1,8 +1,11 @@
 use crate::{
     Config,
-    purl::model::{
-        details::base_purl::BasePurlDetails,
-        summary::{base_purl::BasePurlSummary, purl::PurlSummary},
+    purl::{
+        model::{
+            details::base_purl::BasePurlDetails,
+            summary::{base_purl::BasePurlSummary, purl::PurlSummary},
+        },
+        service::PurlService,
     },
     test::{caller, caller_with},
 };
@@ -11,10 +14,13 @@ use regex::Regex;
 use rstest::rstest;
 
 /// Returns a Config with a pattern matching dot- and hyphen-separated vendor rebuilds (e.g. `3.0.3.redhat-00002`, `0.14.1-redhat-00001`).
+///
+/// `expect` is acceptable here: the regex is a hardcoded literal whose validity is known at
+/// compile time, and in test setup code a panic is the correct failure signal.
 #[allow(clippy::expect_used)]
 fn vendor_config() -> Config {
     Config {
-        recommend_patterns: vec![Regex::new(r"^(.+)[.-]redhat-[0-9]+$").expect("valid")],
+        recommend_patterns: PurlService::default_recommend_patterns(),
         ..Default::default()
     }
 }
