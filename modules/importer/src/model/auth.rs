@@ -78,10 +78,7 @@ impl CredentialSource {
         match self {
             Self::Inline(v) => Ok(v.clone()),
             Self::Env(name) => {
-                let prefixes = credential_config
-                    .allowed_prefixes
-                    .as_deref()
-                    .ok_or(AuthError::EnvVarDisabled)?;
+                let prefixes = &credential_config.allowed_prefixes;
                 if prefixes.is_empty() {
                     return Err(AuthError::EnvVarDisabled);
                 }
@@ -97,10 +94,7 @@ impl CredentialSource {
                 })
             }
             Self::File(path) => {
-                let paths = credential_config
-                    .allowed_paths
-                    .as_deref()
-                    .ok_or(AuthError::FileDisabled)?;
+                let paths = &credential_config.allowed_paths;
                 if paths.is_empty() {
                     return Err(AuthError::FileDisabled);
                 }
@@ -172,10 +166,10 @@ pub struct AuthConfig {
 /// per-importer [`AuthConfig`].
 #[derive(Debug, Clone, Default)]
 pub struct CredentialConfig {
-    /// Required prefixes for env var names. Empty = allow none.
-    pub allowed_prefixes: Option<Vec<String>>,
-    /// Allowed base paths for file credentials. Empty = allow none.
-    pub allowed_paths: Option<Vec<String>>,
+    /// Required prefixes for env var names. Empty vec = allow none.
+    pub allowed_prefixes: Vec<String>,
+    /// Allowed base paths for file credentials. Empty vec = allow none.
+    pub allowed_paths: Vec<String>,
 }
 
 #[cfg(test)]
@@ -206,8 +200,8 @@ mod tests {
         // SAFETY: test-only mutation, single-threaded test binary
         unsafe { set_var("IMPORTER_AUTH_TC6090_TEST_VAR", "env-value") };
         let credential_config = CredentialConfig {
-            allowed_prefixes: Some(vec!["IMPORTER_AUTH_".into()]),
-            allowed_paths: None,
+            allowed_prefixes: vec!["IMPORTER_AUTH_".into()],
+            allowed_paths: vec![],
         };
         // When resolving
         let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_TEST_VAR".into());
@@ -225,8 +219,8 @@ mod tests {
         // SAFETY: test-only mutation, single-threaded test binary
         unsafe { remove_var("IMPORTER_AUTH_TC6090_MISSING_VAR") };
         let credential_config = CredentialConfig {
-            allowed_prefixes: Some(vec!["IMPORTER_AUTH_".into()]),
-            allowed_paths: None,
+            allowed_prefixes: vec!["IMPORTER_AUTH_".into()],
+            allowed_paths: vec![],
         };
         // When resolving
         let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_MISSING_VAR".into());
@@ -241,11 +235,11 @@ mod tests {
     fn credential_source_env_errors_when_not_allowed() {
         let src = CredentialSource::Env("NOT_ALLOWED_VAR".into());
         let credential_config = CredentialConfig {
-            allowed_prefixes: Some(vec!["ALLOWED_".into()]),
-            allowed_paths: None,
+            allowed_prefixes: vec!["ALLOWED_".into()],
+            allowed_paths: vec![],
         };
         assert!(
-            matches!(src.resolve(&credential_config), Err(AuthError::EnvVarNotAllowed { name , allowed_prefixes }) if name == "NOT_ALLOWED_VAR" && allowed_prefixes == credential_config.allowed_prefixes.unwrap())
+            matches!(src.resolve(&credential_config), Err(AuthError::EnvVarNotAllowed { name , allowed_prefixes }) if name == "NOT_ALLOWED_VAR" && allowed_prefixes == credential_config.allowed_prefixes)
         );
     }
 
@@ -256,8 +250,8 @@ mod tests {
         unsafe { set_var("ALLOWED_VAR", "allowed-value") };
         let src = CredentialSource::Env("ALLOWED_VAR".into());
         let credential_config = CredentialConfig {
-            allowed_prefixes: Some(vec!["ALLOWED_".into()]),
-            allowed_paths: None,
+            allowed_prefixes: vec!["ALLOWED_".into()],
+            allowed_paths: vec![],
         };
         assert!(matches!(src.resolve(&credential_config), Ok(value) if value == "allowed-value"));
         // SAFETY: test-only mutation, single-threaded test binary
@@ -275,8 +269,8 @@ mod tests {
         // When resolving with the temp dir allowed
         let src = CredentialSource::File(path.to_string_lossy().into_owned());
         let credential_config = CredentialConfig {
-            allowed_prefixes: None,
-            allowed_paths: Some(vec![dir.path().to_string_lossy().into_owned()]),
+            allowed_prefixes: vec![],
+            allowed_paths: vec![dir.path().to_string_lossy().into_owned()],
         };
 
         // Then the value matches file content
@@ -292,8 +286,8 @@ mod tests {
         write(&path, "file-secret").unwrap();
         let src = CredentialSource::File(path.to_string_lossy().into_owned());
         let credential_config = CredentialConfig {
-            allowed_prefixes: None,
-            allowed_paths: Some(vec![dir.path().to_string_lossy().into_owned()]),
+            allowed_prefixes: vec![],
+            allowed_paths: vec![dir.path().to_string_lossy().into_owned()],
         };
         assert!(matches!(src.resolve(&credential_config), Ok(value) if value == "file-secret"));
     }
@@ -302,8 +296,8 @@ mod tests {
     #[test]
     fn credential_source_file_errors_when_missing() {
         let credential_config = CredentialConfig {
-            allowed_prefixes: None,
-            allowed_paths: Some(vec!["/nonexistent/path".to_string()]),
+            allowed_prefixes: vec![],
+            allowed_paths: vec!["/nonexistent/path".to_string()],
         };
         let src = CredentialSource::File("/nonexistent/path/secret.txt".to_string());
         assert!(src.resolve(&credential_config).is_err());
@@ -324,8 +318,8 @@ mod tests {
     fn credential_source_env_errors_when_prefixes_empty() {
         let src = CredentialSource::Env("IMPORTER_AUTH_VAR".into());
         let credential_config = CredentialConfig {
-            allowed_prefixes: Some(vec![]),
-            allowed_paths: None,
+            allowed_prefixes: vec![],
+            allowed_paths: vec![],
         };
         assert!(matches!(
             src.resolve(&credential_config),
@@ -348,8 +342,8 @@ mod tests {
     fn credential_source_file_errors_when_paths_empty() {
         let src = CredentialSource::File("/var/run/secrets/token".into());
         let credential_config = CredentialConfig {
-            allowed_prefixes: None,
-            allowed_paths: Some(vec![]),
+            allowed_prefixes: vec![],
+            allowed_paths: vec![],
         };
         assert!(matches!(
             src.resolve(&credential_config),
@@ -362,12 +356,12 @@ mod tests {
     fn credential_source_file_errors_when_not_allowed() {
         let src = CredentialSource::File("/not-allowed/path/secret.txt".to_string());
         let credential_config = CredentialConfig {
-            allowed_prefixes: None,
-            allowed_paths: Some(vec!["/allowed/path".to_string()]),
+            allowed_prefixes: vec![],
+            allowed_paths: vec!["/allowed/path".to_string()],
         };
         assert!(matches!(
           src.resolve(&credential_config),
-          Err( AuthError::FileNotAllowed { path, allowed_paths }) if path == "/not-allowed/path/secret.txt" && allowed_paths == credential_config.allowed_paths.unwrap()
+          Err( AuthError::FileNotAllowed { path, allowed_paths }) if path == "/not-allowed/path/secret.txt" && allowed_paths == credential_config.allowed_paths
         ));
     }
 }
