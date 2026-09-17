@@ -90,5 +90,4 @@ mod tests {
         // Then no error is returned
         assert!(result.is_ok());
     }
-
 }
