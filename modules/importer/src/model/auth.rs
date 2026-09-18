@@ -1,4 +1,5 @@
 use std::{env::VarError, fs::read_to_string, io::Error};
+use trustify_common::env::EnvSource;
 use utoipa::ToSchema;
 
 /// How a credential value is sourced at import time.
@@ -72,16 +73,13 @@ impl CredentialSource {
     /// Resolves the credential to its string value.
     ///
     /// `env_lookup` is called to read environment variables. Production callers
-    /// pass `std::env::var`; tests pass a closure over a map to avoid mutating
+    /// pass `()`; tests pass a `&[("KEY", "val")]` slice to avoid mutating
     /// the process environment.
-    pub fn resolve<F>(
+    pub fn resolve(
         &self,
         credential_config: &CredentialConfig,
-        env_lookup: F,
-    ) -> Result<String, AuthError>
-    where
-        F: Fn(&str) -> Result<String, VarError>,
-    {
+        env_lookup: impl EnvSource,
+    ) -> Result<String, AuthError> {
         match self {
             Self::Inline(v) => Ok(v.clone()),
             Self::Env(name) => {
@@ -95,7 +93,7 @@ impl CredentialSource {
                         allowed_prefixes: prefixes.to_vec(),
                     });
                 }
-                env_lookup(name).map_err(|e| AuthError::EnvVar {
+                env_lookup.lookup(name).map_err(|e| AuthError::EnvVar {
                     name: name.clone(),
                     error: e,
                 })
@@ -181,7 +179,7 @@ pub struct CredentialConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs::write};
+    use std::fs::write;
 
     use tempfile::tempdir;
 
@@ -192,8 +190,7 @@ mod tests {
     fn credential_source_inline_resolves_to_value() {
         let src = CredentialSource::Inline("my-secret".into());
         assert_eq!(
-            src.resolve(&CredentialConfig::default(), |name| std::env::var(name))
-                .unwrap(),
+            src.resolve(&CredentialConfig::default(), ()).unwrap(),
             "my-secret"
         );
     }
@@ -201,20 +198,16 @@ mod tests {
     /// Verifies that an Env credential reads the named environment variable.
     #[test]
     fn credential_source_env_reads_variable() {
-        let env: HashMap<String, String> = [(
-            "IMPORTER_AUTH_TC6090_TEST_VAR".to_string(),
-            "env-value".to_string(),
-        )]
-        .into();
         let credential_config = CredentialConfig {
             allowed_prefixes: vec!["IMPORTER_AUTH_".into()],
             allowed_paths: vec![],
         };
         let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_TEST_VAR".into());
         assert_eq!(
-            src.resolve(&credential_config, |name| {
-                env.get(name).cloned().ok_or(VarError::NotPresent)
-            })
+            src.resolve(
+                &credential_config,
+                &[("IMPORTER_AUTH_TC6090_TEST_VAR", "env-value")],
+            )
             .unwrap(),
             "env-value"
         );
@@ -223,16 +216,13 @@ mod tests {
     /// Verifies that an Env credential errors when the variable is not set.
     #[test]
     fn credential_source_env_errors_when_not_set() {
-        let env: HashMap<String, String> = HashMap::new();
         let credential_config = CredentialConfig {
             allowed_prefixes: vec!["IMPORTER_AUTH_".into()],
             allowed_paths: vec![],
         };
         let src = CredentialSource::Env("IMPORTER_AUTH_TC6090_MISSING_VAR".into());
         assert!(matches!(
-            src.resolve(&credential_config, |name| {
-                env.get(name).cloned().ok_or(VarError::NotPresent)
-            }),
+            src.resolve(&credential_config, ()),
             Err(AuthError::EnvVar { name, .. }) if name == "IMPORTER_AUTH_TC6090_MISSING_VAR"
         ));
     }
@@ -246,7 +236,7 @@ mod tests {
             allowed_paths: vec![],
         };
         assert!(matches!(
-            src.resolve(&credential_config, |name| std::env::var(name)),
+            src.resolve(&credential_config, ()),
             Err(AuthError::EnvVarNotAllowed { name, allowed_prefixes })
                 if name == "NOT_ALLOWED_VAR"
                     && allowed_prefixes == credential_config.allowed_prefixes
@@ -256,17 +246,13 @@ mod tests {
     /// Verifies that an Env credential is valid when the variable matches the allowed prefix.
     #[test]
     fn credential_source_env_is_valid_when_allowed() {
-        let env: HashMap<String, String> =
-            [("ALLOWED_VAR".to_string(), "allowed-value".to_string())].into();
         let credential_config = CredentialConfig {
             allowed_prefixes: vec!["ALLOWED_".into()],
             allowed_paths: vec![],
         };
         let src = CredentialSource::Env("ALLOWED_VAR".into());
         assert!(matches!(
-            src.resolve(&credential_config, |name| {
-                env.get(name).cloned().ok_or(VarError::NotPresent)
-            }),
+            src.resolve(&credential_config, &[("ALLOWED_VAR", "allowed-value")]),
             Ok(value) if value == "allowed-value"
         ));
     }
@@ -282,11 +268,7 @@ mod tests {
             allowed_prefixes: vec![],
             allowed_paths: vec![dir.path().to_string_lossy().into_owned()],
         };
-        assert_eq!(
-            src.resolve(&credential_config, |name| std::env::var(name))
-                .unwrap(),
-            "file-secret"
-        );
+        assert_eq!(src.resolve(&credential_config, ()).unwrap(), "file-secret");
     }
 
     /// Verifies that a File credential is valid when the file is under an allowed path.
@@ -301,7 +283,7 @@ mod tests {
             allowed_paths: vec![dir.path().to_string_lossy().into_owned()],
         };
         assert!(matches!(
-            src.resolve(&credential_config, |name| std::env::var(name)),
+            src.resolve(&credential_config, ()),
             Ok(value) if value == "file-secret"
         ));
     }
@@ -314,10 +296,7 @@ mod tests {
             allowed_paths: vec!["/nonexistent/path".to_string()],
         };
         let src = CredentialSource::File("/nonexistent/path/secret.txt".to_string());
-        assert!(
-            src.resolve(&credential_config, |name| std::env::var(name))
-                .is_err()
-        );
+        assert!(src.resolve(&credential_config, ()).is_err());
     }
 
     /// Verifies that an Env credential errors when env var source is disabled (empty prefixes).
@@ -325,7 +304,7 @@ mod tests {
     fn credential_source_env_errors_when_disabled() {
         let src = CredentialSource::Env("IMPORTER_AUTH_VAR".into());
         assert!(matches!(
-            src.resolve(&CredentialConfig::default(), |name| std::env::var(name)),
+            src.resolve(&CredentialConfig::default(), ()),
             Err(AuthError::EnvVarDisabled)
         ));
     }
@@ -339,7 +318,7 @@ mod tests {
             allowed_paths: vec![],
         };
         assert!(matches!(
-            src.resolve(&credential_config, |name| std::env::var(name)),
+            src.resolve(&credential_config, ()),
             Err(AuthError::EnvVarDisabled)
         ));
     }
@@ -349,7 +328,7 @@ mod tests {
     fn credential_source_file_errors_when_disabled() {
         let src = CredentialSource::File("/var/run/secrets/token".into());
         assert!(matches!(
-            src.resolve(&CredentialConfig::default(), |name| std::env::var(name)),
+            src.resolve(&CredentialConfig::default(), ()),
             Err(AuthError::FileDisabled)
         ));
     }
@@ -363,7 +342,7 @@ mod tests {
             allowed_paths: vec![],
         };
         assert!(matches!(
-            src.resolve(&credential_config, |name| std::env::var(name)),
+            src.resolve(&credential_config, ()),
             Err(AuthError::FileDisabled)
         ));
     }
@@ -377,7 +356,7 @@ mod tests {
             allowed_paths: vec!["/allowed/path".to_string()],
         };
         assert!(matches!(
-            src.resolve(&credential_config, |name| std::env::var(name)),
+            src.resolve(&credential_config, ()),
             Err(AuthError::FileNotAllowed { path, allowed_paths })
                 if path == "/not-allowed/path/secret.txt"
                     && allowed_paths == credential_config.allowed_paths

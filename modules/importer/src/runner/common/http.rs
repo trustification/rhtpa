@@ -27,7 +27,7 @@ pub fn build_http_client(
     match &auth.method {
         AuthMethod::Bearer { token } => {
             let resolved = token
-                .resolve(credential_config, |name| std::env::var(name))
+                .resolve(credential_config, ())
                 .map_err(|e| Error::Processing(anyhow!("bearer token resolution failed: {e}")))?;
             let value = format!("Bearer {resolved}");
             let mut header_val = HeaderValue::from_str(&value)?;
@@ -35,16 +35,12 @@ pub fn build_http_client(
             headers.insert(header::AUTHORIZATION, header_val);
         }
         AuthMethod::Basic { username, password } => {
-            let user = username
-                .resolve(credential_config, |name| std::env::var(name))
-                .map_err(|e| {
-                    Error::Processing(anyhow!("basic auth username resolution failed: {e}"))
-                })?;
-            let pass = password
-                .resolve(credential_config, |name| std::env::var(name))
-                .map_err(|e| {
-                    Error::Processing(anyhow!("basic auth password resolution failed: {e}"))
-                })?;
+            let user = username.resolve(credential_config, ()).map_err(|e| {
+                Error::Processing(anyhow!("basic auth username resolution failed: {e}"))
+            })?;
+            let pass = password.resolve(credential_config, ()).map_err(|e| {
+                Error::Processing(anyhow!("basic auth password resolution failed: {e}"))
+            })?;
             let encoded = BASE64_STANDARD.encode(format!("{user}:{pass}"));
             let value = format!("Basic {encoded}");
             let mut header_val = HeaderValue::from_str(&value)?;
@@ -53,7 +49,7 @@ pub fn build_http_client(
         }
         AuthMethod::ApiKey { header, value } => {
             let resolved = value
-                .resolve(credential_config, |name| std::env::var(name))
+                .resolve(credential_config, ())
                 .map_err(|e| Error::Processing(anyhow!("api key resolution failed: {e}")))?;
             let header_name = HeaderName::from_bytes(header.as_bytes())
                 .map_err(|e| Error::Processing(anyhow!("invalid api key header name: {e}")))?;
