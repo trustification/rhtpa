@@ -10,7 +10,10 @@ use crate::{
         service::policy::{PolicyVerdict, evaluate_algorithm},
     },
 };
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, LoaderTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, JoinType, LoaderTrait, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait,
+};
 use tracing::instrument;
 use trustify_common::{
     db::{
@@ -40,8 +43,13 @@ impl CryptoService {
         connection: &C,
     ) -> Result<PaginatedResults<CryptoAlgorithmSummary>, Error> {
         let limiter = sbom_crypto::Entity::find()
+            .join(JoinType::InnerJoin, sbom_node::Relation::Crypto.def().rev())
             .filter(sbom_crypto::Column::AssetType.eq(CryptoAssetType::Algorithm))
-            .filtering_with(query, Columns::from_entity::<sbom_crypto::Entity>())?
+            .filtering_with(
+                query,
+                Columns::from_entity::<sbom_crypto::Entity>()
+                    .add_columns(Columns::from_entity::<sbom_node::Entity>()),
+            )?
             .order_by_asc(sbom_crypto::Column::SbomId)
             .order_by_asc(sbom_crypto::Column::NodeId)
             .limiting(connection, paginated, &self.cache)?;
